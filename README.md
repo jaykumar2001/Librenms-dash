@@ -16,7 +16,6 @@ LibreNMS-Dash is a LibreNMS-backed network dashboard. It aggregates devices, sit
 - `backend/` - Hono API server, LibreNMS polling, in-memory cache
 - `frontend/` - React + Vite topology UI
 - `shared/` - TypeScript contracts shared by both packages
-- `docs/` - Project notes and design/spec documentation
 
 ## Requirements
 
@@ -146,10 +145,6 @@ This dashboard is designed for a trusted LAN / management network. Be aware of i
 - **No authentication.** Every API endpoint (and the bundled frontend) is served without a login. Anyone who can reach the backend port can read the full device inventory, IP addresses, serials, and topology. Do not expose port `3001` to untrusted networks — put it behind a VPN, an authenticating reverse proxy, or a firewall.
 - **TLS verification is disabled for LibreNMS** when `LIBRENMS_URL` is HTTPS, to accommodate self-signed certificates. This affects outbound TLS for the backend process, which only ever talks to the configured LibreNMS instance.
 - **The graph/icon endpoints proxy to LibreNMS** using the API token. User-supplied path segments are URL-encoded to prevent traversal, but the backend is still a privileged client of LibreNMS — keep it on the same trust boundary as LibreNMS itself.
-
-## Further Reading
-
-- [Project design notes](docs/specs/2026-06-03-librenms-dash-design.md)
 
 ## License
 
