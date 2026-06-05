@@ -144,3 +144,7 @@ This dashboard is designed for a trusted LAN / management network. Be aware of i
 ## Further Reading
 
 - [Project design notes](docs/specs/2026-06-03-librenms-dash-design.md)
+
+## License
+
+Licensed under the GNU General Public License v3.0 (or later). See [LICENSE](LICENSE) for the full text.
