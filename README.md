@@ -10,6 +10,7 @@ LibreNMS-Dash is a LibreNMS-backed network dashboard. It aggregates devices, sit
 - ARP-derived links, filtered to same-location devices
 - Device hover popovers with traffic and health graphs
 - Drag, snap, resize, and orientation controls for site boxes
+<img width="1506" height="738" alt="Librenms-Dash" src="https://github.com/user-attachments/assets/d46b4d37-1ac9-44b1-adfb-a6fe19c2f208" />
 
 ## Repository Layout
 
