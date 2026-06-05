@@ -1,30 +1,27 @@
 import type { OverlayType, OverlayGroup, OverlayLink, OverlayPortSummary } from "@librenms-dash/shared";
 import type { LnmsPort, LnmsDeviceIp } from "./types.js";
+import { OVERLAY_SUBNETS } from "../config.js";
+import { makeCidrMatcher } from "./cidr.js";
 
 interface OverlayConfig {
   type: OverlayType;
-  subnet: string;
   color: string;
   ifacePattern: RegExp;
-  networkPrefix: string;
-  prefixLen: number;
+  subnets: string[];
+  matchesIp: (ip: string | undefined | null) => boolean;
 }
 
+// Interface-name patterns are protocol conventions (not deployment-specific); the
+// address ranges come from configuration (see OVERLAY_SUBNETS).
 const OVERLAY_CONFIGS: OverlayConfig[] = [
-  { type: "zerotier", subnet: "172.29.0.0/24", color: "#9333ea", ifacePattern: /^zt/, networkPrefix: "172.29.0.", prefixLen: 24 },
-  { type: "wireguard", subnet: "10.127.0.0/24", color: "#dc2626", ifacePattern: /^wg/, networkPrefix: "10.127.0.", prefixLen: 24 },
-  { type: "tailscale", subnet: "100.64.0.0/10", color: "#06b6d4", ifacePattern: /^tailscale/, networkPrefix: "100.", prefixLen: 10 },
-];
-
-function ipInSubnet(ip: string | undefined | null, prefix: string, prefixLen: number): boolean {
-  if (!ip) return false;
-  if (prefixLen === 10 && prefix === "100.") {
-    const first = parseInt(ip.split(".")[0]);
-    const second = parseInt(ip.split(".")[1]);
-    return first === 100 && second >= 64 && second <= 127;
-  }
-  return ip.startsWith(prefix);
-}
+  { type: "zerotier" as const, color: "#9333ea", ifacePattern: /^zt/ },
+  { type: "wireguard" as const, color: "#dc2626", ifacePattern: /^wg/ },
+  { type: "tailscale" as const, color: "#06b6d4", ifacePattern: /^tailscale/ },
+].map((cfg) => ({
+  ...cfg,
+  subnets: OVERLAY_SUBNETS[cfg.type],
+  matchesIp: makeCidrMatcher(OVERLAY_SUBNETS[cfg.type]),
+}));
 
 export function classifyOverlayPort(port: LnmsPort): OverlayType | null {
   if (!port.ifName) return null;
@@ -37,7 +34,7 @@ export function classifyOverlayPort(port: LnmsPort): OverlayType | null {
 export function classifyOverlayIp(ip: string | undefined | null): OverlayType | null {
   if (!ip) return null;
   for (const cfg of OVERLAY_CONFIGS) {
-    if (ipInSubnet(ip, cfg.networkPrefix, cfg.prefixLen)) return cfg.type;
+    if (cfg.matchesIp(ip)) return cfg.type;
   }
   return null;
 }
@@ -118,7 +115,7 @@ export function buildOverlayLinks(
       }
     }
 
-    groups.push({ type: cfg.type, subnet: cfg.subnet, color: cfg.color, links });
+    groups.push({ type: cfg.type, subnet: cfg.subnets.join(", "), color: cfg.color, links });
   }
 
   return groups;

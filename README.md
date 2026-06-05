@@ -36,7 +36,14 @@ PORT=3001
 NODE_ENV=development
 ```
 
-For local development, put these in `.env`. For Docker Compose, the values are read from the environment and passed into the container.
+For local development, put these in `.env`. For Docker Compose, the values are read from the environment and passed into the container. See [`.env.example`](.env.example) for the full list.
+
+### Network ranges
+
+No subnets are hard-coded. Overlay address ranges and ARP exclusions are configured via environment variables (all optional):
+
+- `ZEROTIER_SUBNETS`, `WIREGUARD_SUBNETS`, `TAILSCALE_SUBNETS` — comma-separated CIDRs used to recognise overlay addresses by IP. Interface-name detection (`zt*`/`wg*`/`tailscale*`) always works regardless. Tailscale defaults to its standard CGNAT block (`100.64.0.0/10`).
+- `ARP_EXCLUDED_SUBNETS` — comma-separated CIDRs to ignore when scanning ARP tables (in addition to the overlay subnets). Defaults to loopback and link-local.
 
 ## Local Development
 
@@ -90,8 +97,7 @@ The service listens on `http://localhost:3001` and serves both the API and the b
 `docker-compose.yaml` also sets:
 
 - `NODE_TLS_REJECT_UNAUTHORIZED=0` for self-signed LibreNMS certificates
-- `extra_hosts` for `librenms.local.lan`
-- `dns` to match the local network setup
+- `extra_hosts` / `dns`, driven by the optional `LIBRENMS_HOSTNAME`, `LIBRENMS_HOST_IP`, and `LOCAL_DNS` variables (ignored under `network_mode: host`, where the container uses the host's resolver)
 
 ## API
 

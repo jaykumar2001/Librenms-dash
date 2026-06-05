@@ -2,10 +2,19 @@ import { cache, TTL } from "../cache/store.js";
 import { librenmsGet, delay } from "../librenms/client.js";
 import { buildOverlayLinks } from "../librenms/overlays.js";
 import { loadOuiDatabases, lookupVendor, normalizeMac } from "../librenms/oui.js";
+import { makeCidrMatcher } from "../librenms/cidr.js";
+import { ARP_EXCLUDED_SUBNETS, OVERLAY_SUBNETS } from "../config.js";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsLocation, LnmsAlert, LnmsLink, LnmsArpEntry } from "../librenms/types.js";
 import type { ArpLink, ArpDiscoveredDevice } from "@librenms-dash/shared";
 
 const STAGGER_MS = 200;
+
+// IPs never treated as discoverable ARP neighbours: configured overlay ranges
+// plus excluded infrastructure ranges (loopback, link-local, Docker, …).
+const isExcludedArpIp = makeCidrMatcher([
+  ...ARP_EXCLUDED_SUBNETS,
+  ...Object.values(OVERLAY_SUBNETS).flat(),
+]);
 
 async function fetchDevices(): Promise<LnmsDevice[]> {
   const res = await librenmsGet<{ devices: LnmsDevice[] }>("/devices");
@@ -127,19 +136,9 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   const linkSet = new Set<string>();
   const arpLinks: ArpLink[] = [];
 
-  const isOverlayIp = (ip: string) =>
-    ip.startsWith("172.29.0.") ||   // ZeroTier
-    ip.startsWith("10.127.0.") ||   // WireGuard
-    ip.startsWith("100.81.") ||     // Tailscale
-    ip.startsWith("100.64.") ||     // Tailscale CGNAT
-    ip.startsWith("172.18.") ||     // Docker bridge
-    ip.startsWith("172.19.") ||     // Docker bridge
-    ip.startsWith("172.20.") ||     // Docker bridge
-    ip.startsWith("172.21.") ||     // Docker bridge
-    ip.startsWith("10.128.") ||     // VPN tunnel
-    ip.startsWith("127.") ||        // loopback
-    ip.startsWith("169.254.") ||    // link-local
-    ip.startsWith("172.17.");       // Docker default bridge
+  // Treat configured overlay ranges and excluded infrastructure ranges as
+  // non-discoverable when scanning ARP tables (see config.ts / .env).
+  const isOverlayIp = isExcludedArpIp;
 
   const uniqueIps = [...new Set(
     devices.flatMap(d => {
