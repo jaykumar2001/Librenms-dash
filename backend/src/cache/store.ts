@@ -40,7 +40,7 @@ export class TTLCache {
 export const cache = new TTLCache();
 
 export const TTL = {
-  DEVICES: 60 * 60 * 1000,       // 1 hour
+  DEVICES: 15 * 60 * 1000,       // 15 min cache lifetime (polled every 5 min — see DEVICE_POLL_MS)
   LOCATIONS: 60 * 60 * 1000,     // 1 hour
   AVAILABILITY: 60 * 60 * 1000,  // 1 hour
   PORTS: 5 * 60 * 1000,          // 5 min

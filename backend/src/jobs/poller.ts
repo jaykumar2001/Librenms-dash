@@ -9,6 +9,11 @@ import type { ArpLink, ArpDiscoveredDevice } from "@librenms-dash/shared";
 
 const STAGGER_MS = 200;
 
+// How often to refresh the device list (status, uptime, last_polled). Kept well
+// below TTL.DEVICES so the cached list never expires between polls. LibreNMS itself
+// typically polls every 5 min, so a shorter interval here wouldn't add freshness.
+const DEVICE_POLL_MS = 5 * 60 * 1000;
+
 // IPs never treated as discoverable ARP neighbours: configured overlay ranges
 // plus excluded infrastructure ranges (loopback, link-local, Docker, …).
 const isExcludedArpIp = makeCidrMatcher([
@@ -376,8 +381,8 @@ function safeInterval(fn: () => Promise<unknown>, ms: number) {
 }
 
 export function startPoller() {
-  // Devices + locations: every 1 hour
-  safeInterval(pollDevicesAndLocations, TTL.DEVICES);
+  // Devices + locations: every 5 min (keeps status / uptime / last_polled fresh)
+  safeInterval(pollDevicesAndLocations, DEVICE_POLL_MS);
 
   // Ports + overlays: every 5 min
   safeInterval(pollPortsAndIps, TTL.PORTS);

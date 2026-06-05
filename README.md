@@ -136,7 +136,7 @@ When a device moves, its category underlay and connected links update. When a si
 ## Notes
 
 - ARP links are filtered so devices in different LibreNMS locations do not form a link.
-- The backend caches LibreNMS data in memory with TTL-based refreshes.
+- The backend caches LibreNMS data in memory with TTL-based refreshes. The device list (status, uptime, `last_polled`) is refreshed every 5 minutes; ports and alerts on their own intervals.
 - The production build bundles the frontend into `frontend/dist` and serves it from the backend process.
 
 ## Security
