@@ -1,0 +1,18 @@
+services:
+  librenms-dash:
+    build: .
+    container_name: librenms-dash
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - LIBRENMS_URL=${LIBRENMS_URL:-https://librenms.local.lan}
+      - LIBRENMS_TOKEN=${LIBRENMS_TOKEN}
+      - PORT=3001
+      - NODE_ENV=production
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+    extra_hosts:
+      - "librenms.local.lan:192.168.5.6"
+    network_mode: host
+    dns:
+      - 192.168.5.1

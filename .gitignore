@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.env
+*.log
+*.tsbuildinfo
+.DS_Store
+
+# Editor / tooling
+.grok/
+.vscode/
+.idea/
+
+# Reproducible IEEE OUI databases (fetched by scripts/download-oui.sh or the Docker build)
+/data/*.csv
+
+# Stale compiled output from the types-only shared package (source is types.ts)
+shared/types.js
+shared/types.d.ts

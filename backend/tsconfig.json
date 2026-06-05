@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "strict": true,
+    "outDir": "dist",
+    "rootDir": "..",
+    "declaration": true,
+    "skipLibCheck": true,
+    "paths": {
+      "@librenms-dash/shared": ["../shared/types.ts"]
+    }
+  },
+  "include": ["src/**/*", "../shared/types.ts"],
+  "references": [{ "path": "../shared" }]
+}

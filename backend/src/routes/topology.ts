@@ -1,0 +1,140 @@
+import { Hono } from "hono";
+import { cache } from "../cache/store.js";
+import type { TopologyResponse, Site, DeviceSummary, OverlayGroup, NeighborLink, ArpLink, ArpDiscoveredDevice } from "@librenms-dash/shared";
+import type { LnmsDevice, LnmsPort, LnmsLocation, LnmsAlert, LnmsDeviceIp, LnmsLink } from "../librenms/types.js";
+import { getOverlayPortSummaries, findLanIp } from "../librenms/overlays.js";
+
+const app = new Hono();
+
+function deriveDisplayName(device: LnmsDevice): string {
+  // Prefer sysName, strip FQDN domain parts
+  const name = device.sysName || device.hostname;
+  return name.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "").replace(/\.[a-z]+\.[a-z]+$/, "");
+}
+
+app.get("/", (c) => {
+  const devices = cache.get<LnmsDevice[]>("devices") ?? [];
+  const locations = cache.get<LnmsLocation[]>("locations") ?? [];
+  const overlays = cache.get<OverlayGroup[]>("overlays") ?? [];
+  const alerts = cache.get<LnmsAlert[]>("alerts") ?? [];
+  const lnmsLinks = cache.get<LnmsLink[]>("links") ?? [];
+
+  const locationMap = new Map<string, LnmsLocation>();
+  for (const loc of locations) {
+    locationMap.set(loc.location, loc);
+  }
+
+  const siteMap = new Map<string, Site>();
+
+  for (const device of devices) {
+    const locName = device.location || "Unknown";
+    if (!siteMap.has(locName)) {
+      const loc = locationMap.get(locName);
+      siteMap.set(locName, {
+        id: locName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        location: locName,
+        lat: loc?.lat ?? null,
+        lng: loc?.lng ?? null,
+        devices: [],
+      });
+    }
+
+    const ports = cache.get<LnmsPort[]>(`ports:${device.hostname}`) ?? [];
+    const ips = cache.get<LnmsDeviceIp[]>(`ips:${device.hostname}`) ?? [];
+
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const p of ports) {
+      totalIn += p.ifInOctets_rate ?? 0;
+      totalOut += p.ifOutOctets_rate ?? 0;
+    }
+
+    const summary: DeviceSummary = {
+      device_id: device.device_id,
+      hostname: device.hostname,
+      displayName: deriveDisplayName(device),
+      ip: device.ip,
+      lanIp: findLanIp(device.ip, ips),
+      os: device.os,
+      icon: device.icon,
+      status: device.status,
+      uptime: device.uptime,
+      location: device.location,
+      hardware: device.hardware,
+      sysName: device.sysName,
+      totalInRate: totalIn,
+      totalOutRate: totalOut,
+      portCount: ports.length,
+      overlayPorts: getOverlayPortSummaries(ports, ips),
+    };
+
+    siteMap.get(locName)!.devices.push(summary);
+  }
+
+  // Build neighbor links from LLDP/CDP data
+  const deviceIdMap = new Map<number, LnmsDevice>();
+  for (const d of devices) deviceIdMap.set(d.device_id, d);
+  const deviceHostnameMap = new Map<string, LnmsDevice>();
+  for (const d of devices) deviceHostnameMap.set(d.hostname, d);
+
+  const portNameMap = new Map<number, string>();
+  for (const device of devices) {
+    const ports = cache.get<LnmsPort[]>(`ports:${device.hostname}`) ?? [];
+    for (const p of ports) portNameMap.set(p.port_id, p.ifName || p.ifDescr || `port-${p.port_id}`);
+  }
+
+  const neighborSet = new Set<string>();
+  const neighbors: NeighborLink[] = [];
+  for (const link of lnmsLinks) {
+    const localDev = deviceIdMap.get(link.local_device_id);
+    const remoteDev = deviceIdMap.get(link.remote_device_id);
+    if (!localDev || !remoteDev) continue;
+
+    const key = [link.local_device_id, link.remote_device_id].sort().join("-") +
+      ":" + [link.local_port_id, link.remote_port_id].sort().join("-");
+    if (neighborSet.has(key)) continue;
+    neighborSet.add(key);
+
+    neighbors.push({
+      id: link.id,
+      localDeviceId: link.local_device_id,
+      localHostname: localDev.hostname,
+      localPort: portNameMap.get(link.local_port_id) ?? `port-${link.local_port_id}`,
+      remoteDeviceId: link.remote_device_id,
+      remoteHostname: remoteDev.hostname,
+      remotePort: portNameMap.get(link.remote_port_id) ?? link.remote_port ?? `port-${link.remote_port_id}`,
+      protocol: link.protocol,
+    });
+  }
+
+  const arpLinks = (cache.get<ArpLink[]>("arpLinks") ?? []).filter((link) => {
+    const fromDevice = deviceHostnameMap.get(link.fromHostname);
+    const toDevice = deviceHostnameMap.get(link.toHostname);
+    if (!fromDevice || !toDevice) return false;
+    return (fromDevice.location || "Unknown") === (toDevice.location || "Unknown");
+  });
+
+  const arpDevices = cache.get<ArpDiscoveredDevice[]>("arpDevices") ?? [];
+
+  const response: TopologyResponse = {
+    sites: [...siteMap.values()],
+    overlays,
+    neighbors,
+    arpLinks,
+    arpDevices,
+    alerts: alerts.map((a) => ({
+      id: a.id,
+      device_id: a.device_id,
+      hostname: a.hostname,
+      rule: typeof a.rule === "string" ? a.rule : a.rule?.name ?? "",
+      severity: a.severity,
+      state: a.state,
+      timestamp: a.timestamp,
+    })),
+    lastUpdated: new Date().toISOString(),
+  };
+
+  return c.json(response);
+});
+
+export default app;

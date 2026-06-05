@@ -1,0 +1,15 @@
+{
+  "name": "librenms-dash",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "pnpm": {
+    "onlyBuiltDependencies": ["@swc/core", "esbuild"]
+  },
+  "packageManager": "pnpm@10.30.2",
+  "scripts": {
+    "dev": "pnpm --filter backend dev & pnpm --filter frontend dev",
+    "build": "pnpm --filter frontend build && pnpm --filter backend build",
+    "start": "pnpm --filter backend start"
+  }
+}

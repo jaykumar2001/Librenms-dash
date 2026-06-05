@@ -1,0 +1,10 @@
+node_modules
+**/node_modules
+dist
+**/dist
+.env
+*.log
+.DS_Store
+.git
+docs
+CLAUDE.md
