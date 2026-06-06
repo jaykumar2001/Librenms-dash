@@ -56,6 +56,7 @@ export function TopologyMap({ data }: Props) {
   const [hoveredDevice, setHoveredDevice] = useState<{ hostname: string; x: number; y: number; icon: string } | null>(null);
   const [hoveredLink, setHoveredLink] = useState<LinkTooltipData | null>(null);
   const [hoveredLinkKey, setHoveredLinkKey] = useState<string | null>(null);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [hiddenOverlays, setHiddenOverlays] = useState<Record<string, boolean>>({ zerotier: true, wireguard: true, tailscale: true });
   const [showNeighbors, setShowNeighbors] = useState(false);
   const [showArp, setShowArp] = useState(false);
@@ -167,9 +168,13 @@ export function TopologyMap({ data }: Props) {
       popoverHovered.current = false;
       const dev = deviceMap.get(hostname);
       setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
+      setHighlightedId(hostname);
     } else {
       dismissTimer.current = setTimeout(() => {
-        if (!popoverHovered.current) setHoveredDevice(null);
+        if (!popoverHovered.current) {
+          setHoveredDevice(null);
+          setHighlightedId(null);
+        }
       }, 150);
     }
   }, [deviceMap]);
@@ -473,6 +478,7 @@ export function TopologyMap({ data }: Props) {
             const ty = nl.target.y;
             if (sx == null || sy == null || tx == null || ty == null) return null;
             const key = `nl-${nl.source.hostname}-${nl.target.hostname}-${nl.localPort}`;
+            const linked = highlightedId === nl.source.hostname || highlightedId === nl.target.hostname;
             return (
               <HoverableLinkPath
                 key={key}
@@ -480,6 +486,7 @@ export function TopologyMap({ data }: Props) {
                 sx={sx} sy={sy} tx={tx} ty={ty}
                 color={NEIGHBOR_COLOR}
                 hovered={hoveredLinkKey === key}
+                highlighted={linked}
                 onMouseEnter={(e) => showLinkTooltip(key, {
                   type: "lldp",
                   screenX: e.clientX,
@@ -508,6 +515,7 @@ export function TopologyMap({ data }: Props) {
             const ty = al.target.y;
             if (sx == null || sy == null || tx == null || ty == null) return null;
             const key = `arp-${al.source.hostname}-${al.target.hostname}`;
+            const linked = highlightedId === al.source.hostname || highlightedId === al.target.hostname;
             return (
               <HoverableLinkPath
                 key={key}
@@ -515,6 +523,7 @@ export function TopologyMap({ data }: Props) {
                 sx={sx} sy={sy} tx={tx} ty={ty}
                 color={ARP_COLOR}
                 hovered={hoveredLinkKey === key}
+                highlighted={linked}
                 onMouseEnter={(e) => showLinkTooltip(key, {
                   type: "arp",
                   screenX: e.clientX,
@@ -537,11 +546,13 @@ export function TopologyMap({ data }: Props) {
           {/* Overlay links */}
           {visibleLinks.map((link) => {
             const key = `ol-${link.overlayType}-${link.source.hostname}-${link.target.hostname}`;
+            const linked = highlightedId === link.source.hostname || highlightedId === link.target.hostname;
             return (
               <OverlayLinkLine
                 key={key}
                 link={link}
                 hovered={hoveredLinkKey === key}
+                highlighted={linked}
                 onMouseEnter={(e) => showLinkTooltip(key, {
                   type: "overlay",
                   screenX: e.clientX,
@@ -569,6 +580,7 @@ export function TopologyMap({ data }: Props) {
               node={node}
               device={deviceMap.get(node.hostname)}
               interactive={snapToGrid}
+              highlighted={highlightedId === node.hostname}
               onHover={handleDeviceHover}
               onMouseDown={(e) => beginDeviceDrag(node.hostname, e)}
             />
@@ -582,6 +594,7 @@ export function TopologyMap({ data }: Props) {
             const d = curvedLinkPath(parent.x, parent.y, ad.x, ad.y, DEVICE_HALF, ARP_HALF);
             const key = `arpdev-link-${ad.mac}`;
             const hovered = hoveredLinkKey === key;
+            const linked = highlightedId === ad.seenByHostname || highlightedId === ad.mac;
             const parentDev = deviceMap.get(ad.seenByHostname);
             return (
               <g key={key}>
@@ -612,8 +625,8 @@ export function TopologyMap({ data }: Props) {
                 <path
                   d={d}
                   stroke={ARP_COLOR}
-                  strokeWidth={hovered ? 2 : 1}
-                  strokeOpacity={hovered ? 0.9 : 0.35}
+                  strokeWidth={hovered || linked ? 2 : 1}
+                  strokeOpacity={hovered || linked ? 0.9 : 0.35}
                   strokeDasharray="3 3"
                   fill="none"
                   pointerEvents="none"
@@ -630,7 +643,8 @@ export function TopologyMap({ data }: Props) {
               <ArpDeviceNode
                 key={ad.mac}
                 node={ad}
-                onMouseEnter={(e) => showLinkTooltip(key, {
+                highlighted={highlightedId === ad.mac || highlightedId === ad.seenByHostname}
+                onMouseEnter={(e) => { setHighlightedId(ad.mac); showLinkTooltip(key, {
                   type: "arp-device",
                   screenX: e.clientX,
                   screenY: e.clientY,
@@ -644,8 +658,8 @@ export function TopologyMap({ data }: Props) {
                   mac: formatMac(ad.mac),
                   interface: ad.seenByInterface,
                   vendor: ad.vendor,
-                })}
-                onMouseLeave={hideLinkTooltip}
+                }); }}
+                onMouseLeave={() => { setHighlightedId(null); hideLinkTooltip(); }}
               />
             );
           })}

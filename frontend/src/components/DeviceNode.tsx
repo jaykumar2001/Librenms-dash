@@ -8,6 +8,7 @@ interface Props {
   node: LayoutNode;
   device?: DeviceSummary;
   interactive?: boolean;
+  highlighted?: boolean;
   onHover: (hostname: string | null, x: number, y: number) => void;
   onMouseDown?: (event: MouseEvent<SVGGElement>) => void;
 }
@@ -28,7 +29,7 @@ const OVERLAY_LABELS: Record<string, string> = {
   tailscale: "TS",
 };
 
-export function DeviceNode({ node, device, interactive = true, onHover, onMouseDown }: Props) {
+export function DeviceNode({ node, device, interactive = true, highlighted, onHover, onMouseDown }: Props) {
   const [isHovered, setIsHovered] = useState(false);
   const x = (node.x ?? 0) - BOX_W / 2;
   const y = (node.y ?? 0) - BOX_H / 2;
@@ -61,11 +62,11 @@ export function DeviceNode({ node, device, interactive = true, onHover, onMouseD
         width={BOX_W}
         height={BOX_H}
         rx={5}
-        fill={isHovered ? "#1e293b" : "#0f172a"}
-        fillOpacity={isHovered ? 0.92 : 0.78}
+        fill={isHovered || highlighted ? "#1e293b" : "#0f172a"}
+        fillOpacity={isHovered ? 0.92 : highlighted ? 0.88 : 0.78}
         stroke={statusColor}
-        strokeWidth={isHovered ? 2 : 1.5}
-        strokeOpacity={isHovered ? 1 : 0.65}
+        strokeWidth={isHovered || highlighted ? 2 : 1.5}
+        strokeOpacity={isHovered || highlighted ? 1 : 0.65}
       />
 
       {/* Icon */}

@@ -3,6 +3,7 @@ import type { ArpDeviceLayoutNode } from "@/hooks/useForceLayout";
 
 interface Props {
   node: ArpDeviceLayoutNode;
+  highlighted?: boolean;
   onMouseEnter?: (e: React.MouseEvent) => void;
   onMouseLeave?: () => void;
 }
@@ -10,7 +11,7 @@ interface Props {
 const BOX_W = 132;
 const BOX_H = 42;
 
-export function ArpDeviceNode({ node, onMouseEnter, onMouseLeave }: Props) {
+export function ArpDeviceNode({ node, highlighted, onMouseEnter, onMouseLeave }: Props) {
   const [isHovered, setIsHovered] = useState(false);
   const x = node.x - BOX_W / 2;
   const y = node.y - BOX_H / 2;
@@ -42,11 +43,11 @@ export function ArpDeviceNode({ node, onMouseEnter, onMouseLeave }: Props) {
         width={BOX_W}
         height={BOX_H}
         rx={6}
-        fill={isHovered ? "#1e293b" : "#0f172a"}
-        fillOpacity={isHovered ? 0.88 : 0.65}
+        fill={isHovered || highlighted ? "#1e293b" : "#0f172a"}
+        fillOpacity={isHovered ? 0.88 : highlighted ? 0.8 : 0.65}
         stroke="#fbbf24"
-        strokeWidth={isHovered ? 1.5 : 1}
-        strokeOpacity={isHovered ? 0.8 : 0.4}
+        strokeWidth={isHovered || highlighted ? 1.5 : 1}
+        strokeOpacity={isHovered || highlighted ? 0.8 : 0.4}
       />
       {/* Vendor */}
       <text
