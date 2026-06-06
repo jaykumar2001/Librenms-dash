@@ -62,7 +62,8 @@ export async function pollDevicesAndLocations() {
   cache.set("allDevicesForExclusion", allDevices, TTL.DEVICES);
   cache.set("locations", locations, TTL.LOCATIONS);
   cache.set("links", links, TTL.DEVICES);
-  console.log(`[poller] Cached ${devices.length} devices (${allDevices.length - devices.length} disabled skipped), ${locations.length} locations, ${links.length} neighbor links`);
+  const skipped = allDevices.length - devices.length;
+  console.log(`[poller] Cached ${devices.length} devices (${skipped} disabled/ignored skipped), ${locations.length} locations, ${links.length} neighbor links`);
 }
 
 export async function pollPortsAndIps() {
