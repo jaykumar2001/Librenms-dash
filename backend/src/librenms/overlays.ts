@@ -1,6 +1,6 @@
 import type { OverlayType, OverlayGroup, OverlayLink, OverlayPortSummary } from "@librenms-dash/shared";
 import type { LnmsPort, LnmsDeviceIp } from "./types.js";
-import { OVERLAY_SUBNETS } from "../config.js";
+import { OVERLAY_SUBNETS, DOCKER_SUBNETS } from "../config.js";
 import { makeCidrMatcher } from "./cidr.js";
 
 interface OverlayConfig {
@@ -184,4 +184,65 @@ export function findLanIp(deviceIp: string, ips: LnmsDeviceIp[]): string {
   if (lanIps.length > 0) return lanIps[0];
   // Fallback to device IP
   return deviceIp;
+}
+
+const OVERLAY_IFACE_RE = /^(zt|wg|tailscale|docker)/i;
+const DOCKER_IFACE_RE = /^(br-|docker|veth)/i;
+const isDockerIp = makeCidrMatcher(DOCKER_SUBNETS);
+
+function isExcludedIface(ifName: string): boolean {
+  return OVERLAY_IFACE_RE.test(ifName) || DOCKER_IFACE_RE.test(ifName) || ifName === "lo";
+}
+
+function isLinkLocalV4(ip: string): boolean {
+  return ip.startsWith("127.") || ip.startsWith("169.254.");
+}
+
+function isExcludedV6(addr: string, origin: string): boolean {
+  const lower = addr.toLowerCase();
+  if (lower.startsWith("fe80:") || lower.startsWith("fe80::")) return true;
+  if (lower.startsWith("::1")) return true;
+  if (lower.startsWith("fd") || lower.startsWith("fc")) return true;
+  if (origin === "linklayer" && !isGlobalUnicastV6(lower)) return true;
+  return false;
+}
+
+function isGlobalUnicastV6(addr: string): boolean {
+  return /^2[0-9a-f]{3}:/.test(addr);
+}
+
+export function findDeviceIps(
+  ips: LnmsDeviceIp[],
+  ports: LnmsPort[],
+): string[] {
+  const portIdToIfName = new Map<number, string>();
+  for (const p of ports) {
+    const name = p.ifName || p.ifDescr;
+    if (name) portIdToIfName.set(p.port_id, name);
+  }
+
+  const result: string[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of ips) {
+    const ifName = portIdToIfName.get(entry.port_id) ?? "";
+    if (ifName && isExcludedIface(ifName)) continue;
+
+    if (entry.ipv4_address) {
+      const addr = entry.ipv4_address;
+      if (isLinkLocalV4(addr)) continue;
+      if (classifyOverlayIp(addr)) continue;
+      if (isDockerIp(addr)) continue;
+      if (!seen.has(addr)) { seen.add(addr); result.push(addr); }
+    }
+
+    const v6 = entry.ipv6_compressed || entry.ipv6_address;
+    if (v6) {
+      const origin = entry.ipv6_origin ?? "";
+      if (isExcludedV6(v6, origin)) continue;
+      if (!seen.has(v6)) { seen.add(v6); result.push(v6); }
+    }
+  }
+
+  return result;
 }

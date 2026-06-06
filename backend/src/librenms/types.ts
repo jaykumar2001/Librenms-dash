@@ -42,6 +42,10 @@ export interface LnmsDeviceIp {
   port_id: number;
   context_name: string;
   ipv4_network_id: string;
+  ipv6_address?: string;
+  ipv6_compressed?: string;
+  ipv6_prefixlen?: number;
+  ipv6_origin?: string;
 }
 
 export interface LnmsLocation {

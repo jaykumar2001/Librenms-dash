@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet } from "../librenms/client.js";
+import { findDeviceIps } from "../librenms/overlays.js";
 import type { DeviceOverview } from "@librenms-dash/shared";
-import type { LnmsDevice, LnmsPort, LnmsAlert, LnmsHealthSensor } from "../librenms/types.js";
+import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsAlert, LnmsHealthSensor } from "../librenms/types.js";
 
 const app = new Hono();
 
@@ -35,11 +36,14 @@ app.get("/:hostname/overview", async (c) => {
   const allAlerts = cache.get<LnmsAlert[]>("alerts") ?? [];
   const deviceAlerts = allAlerts.filter((a) => a.device_id === device.device_id);
 
+  const ips = cache.get<LnmsDeviceIp[]>(`ips:${hostname}`) ?? [];
+
   const overview: DeviceOverview = {
     device: {
       device_id: device.device_id,
       hostname: device.hostname,
       ip: device.ip,
+      ips: findDeviceIps(ips, ports),
       os: device.os,
       version: device.version,
       icon: device.icon,
