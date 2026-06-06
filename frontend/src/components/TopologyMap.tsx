@@ -17,7 +17,7 @@ interface Props {
 
 const GRID_SIZE = 24;
 const ALIGN_SNAP_DISTANCE = 10;
-const LINK_HOVER_DELAY = 350;
+const LINK_HOVER_DELAY = 1000;
 
 const NEIGHBOR_COLOR = "#38bdf8";
 const ARP_COLOR = "#fbbf24";
@@ -623,9 +623,32 @@ export function TopologyMap({ data }: Props) {
           })}
 
           {/* ARP Discovered Devices */}
-          {showArpDevices && arpDeviceNodes.map((ad) => (
-            <ArpDeviceNode key={ad.mac} node={ad} />
-          ))}
+          {showArpDevices && arpDeviceNodes.map((ad) => {
+            const key = `arpdev-${ad.mac}`;
+            const parentDev = deviceMap.get(ad.seenByHostname);
+            return (
+              <ArpDeviceNode
+                key={ad.mac}
+                node={ad}
+                onMouseEnter={(e) => showLinkTooltip(key, {
+                  type: "arp-device",
+                  screenX: e.clientX,
+                  screenY: e.clientY,
+                  sourceHostname: ad.seenByHostname,
+                  targetHostname: ad.mac,
+                  sourceDisplayName: displayName(ad.seenByHostname),
+                  targetDisplayName: ad.vendor || "Unknown device",
+                  color: ARP_COLOR,
+                  sourceIp: parentDev?.lanIp ?? parentDev?.ip ?? "",
+                  targetIp: ad.ips.join(", "),
+                  mac: formatMac(ad.mac),
+                  interface: ad.seenByInterface,
+                  vendor: ad.vendor,
+                })}
+                onMouseLeave={hideLinkTooltip}
+              />
+            );
+          })}
 
           {/* ARP Discovered section labels */}
           {showArpDevices && (() => {

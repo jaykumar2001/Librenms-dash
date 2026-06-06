@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type { ArpDeviceLayoutNode } from "@/hooks/useForceLayout";
 
 interface Props {
   node: ArpDeviceLayoutNode;
+  onMouseEnter?: (e: React.MouseEvent) => void;
+  onMouseLeave?: () => void;
 }
 
 const BOX_W = 132;
 const BOX_H = 42;
 
-export function ArpDeviceNode({ node }: Props) {
+export function ArpDeviceNode({ node, onMouseEnter, onMouseLeave }: Props) {
   const [isHovered, setIsHovered] = useState(false);
   const x = node.x - BOX_W / 2;
   const y = node.y - BOX_H / 2;
@@ -19,10 +21,20 @@ export function ArpDeviceNode({ node }: Props) {
     ? `${node.ips[0]} +${node.ips.length - 1}`
     : node.ips[0] ?? "";
 
+  const handleEnter = useCallback((e: React.MouseEvent) => {
+    setIsHovered(true);
+    onMouseEnter?.(e);
+  }, [onMouseEnter]);
+
+  const handleLeave = useCallback(() => {
+    setIsHovered(false);
+    onMouseLeave?.();
+  }, [onMouseLeave]);
+
   return (
     <g
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onMouseEnter={handleEnter}
+      onMouseLeave={handleLeave}
     >
       <rect
         x={x}
