@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cache } from "../cache/store.js";
 import type { TopologyResponse, Site, DeviceSummary, OverlayGroup, NeighborLink, ArpLink, ArpDiscoveredDevice } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsLocation, LnmsAlert, LnmsDeviceIp, LnmsLink } from "../librenms/types.js";
-import { getOverlayPortSummaries, findLanIp } from "../librenms/overlays.js";
+import { getOverlayPortSummaries, findLanIp, findDeviceIps } from "../librenms/overlays.js";
 
 const app = new Hono();
 
@@ -55,6 +55,7 @@ app.get("/", (c) => {
       displayName: deriveDisplayName(device),
       ip: device.ip,
       lanIp: findLanIp(device.ip, ips),
+      ips: findDeviceIps(ips, ports),
       os: device.os,
       icon: device.icon,
       status: device.status,

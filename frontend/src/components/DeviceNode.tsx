@@ -46,7 +46,7 @@ export function DeviceNode({ node, device, interactive = true, highlighted, onHo
 
   const statusColor = node.status === 1 ? "#22c55e" : "#ef4444";
   const displayName = device?.displayName ?? node.hostname;
-  const lanIp = device?.lanIp ?? device?.ip ?? "";
+  const deviceIps = device?.ips?.length ? device.ips : [device?.lanIp ?? device?.ip ?? ""];
   const overlayPorts = (device?.overlayPorts ?? []).filter((p) => p.ip);
 
   return (
@@ -93,46 +93,40 @@ export function DeviceNode({ node, device, interactive = true, highlighted, onHo
       {/* Status dot */}
       <circle cx={x + BOX_W - 10} cy={y + 14} r={3.5} fill={statusColor} />
 
-      {/* LAN IP */}
-      <text
-        x={x + 6}
-        y={y + 34}
-        fill="#94a3b8"
-        fontSize={9}
-        fontFamily="monospace"
-      >
-        {lanIp}
-      </text>
+      {/* Device IPs */}
+      {deviceIps.slice(0, 2).map((ip, i) => (
+        <text
+          key={ip}
+          x={x + 6}
+          y={y + 34 + i * 10}
+          fill="#94a3b8"
+          fontSize={ip.includes(":") ? 7 : 9}
+          fontFamily="monospace"
+        >
+          {ip.length > 20 ? ip.slice(0, 19) + "…" : ip}
+        </text>
+      ))}
+      {deviceIps.length > 2 && (
+        <text x={x + BOX_W - 8} y={y + 42} fill="#64748b" fontSize={7} fontFamily="monospace" textAnchor="end">
+          +{deviceIps.length - 2}
+        </text>
+      )}
 
       {/* Overlay IPs — one per overlay type, deduped */}
-      {overlayPorts.slice(0, 3).map((p, i) => {
-        const color = OVERLAY_COLORS[p.overlayType] ?? "#6b7280";
-        const label = OVERLAY_LABELS[p.overlayType] ?? p.overlayType.slice(0, 2).toUpperCase();
-        return (
-          <g key={p.overlayType}>
-            <text
-              x={x + 6}
-              y={y + 47 + i * 11}
-              fill={color}
-              fontSize={8}
-              fontWeight={600}
-              fontFamily="monospace"
-            >
-              {label}
-            </text>
-            <text
-              x={x + 24}
-              y={y + 47 + i * 11}
-              fill={color}
-              fillOpacity={0.8}
-              fontSize={8}
-              fontFamily="monospace"
-            >
-              {p.ip}
-            </text>
-          </g>
-        );
-      })}
+      {(() => {
+        const ipRows = Math.min(deviceIps.length, 2);
+        const overlayY = y + 34 + ipRows * 10 + 3;
+        return overlayPorts.slice(0, 3).map((p, i) => {
+          const color = OVERLAY_COLORS[p.overlayType] ?? "#6b7280";
+          const label = OVERLAY_LABELS[p.overlayType] ?? p.overlayType.slice(0, 2).toUpperCase();
+          return (
+            <g key={p.overlayType}>
+              <text x={x + 6} y={overlayY + i * 11} fill={color} fontSize={8} fontWeight={600} fontFamily="monospace">{label}</text>
+              <text x={x + 24} y={overlayY + i * 11} fill={color} fillOpacity={0.8} fontSize={8} fontFamily="monospace">{p.ip}</text>
+            </g>
+          );
+        });
+      })()}
 
       {/* Total traffic at bottom */}
       {device && (device.totalInRate > 0 || device.totalOutRate > 0) && (

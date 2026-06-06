@@ -2,6 +2,7 @@ export interface Device {
   device_id: number;
   hostname: string;
   ip: string;
+  ips: string[];
   os: string;
   version: string;
   icon: string;
@@ -66,6 +67,7 @@ export interface DeviceSummary {
   displayName: string;
   ip: string;
   lanIp: string;
+  ips: string[];
   os: string;
   icon: string;
   status: number;

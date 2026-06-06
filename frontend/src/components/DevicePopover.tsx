@@ -86,7 +86,7 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, onMouseEnter, on
           <table className="w-full mb-3 text-xs border-collapse rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
             <tbody>
               {([
-                ["IP", data.device.ip],
+                ["IP", (data.device.ips?.length ? data.device.ips : [data.device.ip]).join(", ")],
                 ["Operating System", data.device.sysDescr || `${data.device.os} ${data.device.version}` || "—"],
                 ["Hardware", data.device.hardware || "—"],
                 ["Serial", data.device.serial || "—"],
