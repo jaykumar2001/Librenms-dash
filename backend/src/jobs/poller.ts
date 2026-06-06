@@ -105,16 +105,24 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   const ipToHostname = new Map<string, string>();
   const hostnameToLocation = new Map<string, string>();
 
-  // Include ALL LibreNMS devices (active + disabled) in managed exclusion set
+  // Include ALL LibreNMS devices (active + disabled) in managed exclusion set.
+  // Managed IPs are scoped per-location because LAN subnets can overlap across
+  // sites (e.g. 192.168.1.0/24 at both BLR-R and GGN are different networks).
   const allDevicesForExclusion = cache.get<LnmsDevice[]>("allDevicesForExclusion") ?? devices;
-  const managedIps = new Set<string>();
+  const managedIpsByLocation = new Map<string, Set<string>>();
   for (const d of allDevicesForExclusion) {
     deviceIdToHostname.set(d.device_id, d.hostname);
-    managedIps.add(d.ip);
-    hostnameToLocation.set(d.hostname, d.location || "Unknown");
+    const loc = d.location || "Unknown";
+    hostnameToLocation.set(d.hostname, loc);
+    let locIps = managedIpsByLocation.get(loc);
+    if (!locIps) {
+      locIps = new Set();
+      managedIpsByLocation.set(loc, locIps);
+    }
+    locIps.add(d.ip);
     const ips = allIps.get(d.hostname) ?? [];
     for (const ip of ips) {
-      managedIps.add(ip.ipv4_address);
+      locIps.add(ip.ipv4_address);
     }
   }
   // Active devices also provide IP→hostname mapping for ARP link building
@@ -199,30 +207,45 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
     // fall through with whatever we collected per-IP
   }
 
-  // Build managed MAC set from ARP entries matching managed IPs
-  const managedMacs = new Set<string>();
+  // Build managed MAC set from ARP entries matching managed IPs (per-location).
+  // MACs are globally unique, but the IP→MAC association must be checked against
+  // the correct location to avoid false matches from overlapping subnets.
+  const managedMacsByLocation = new Map<string, Set<string>>();
   for (const entry of allArpEntries) {
-    if (managedIps.has(entry.ipv4_address)) {
-      managedMacs.add(normalizeMac(entry.mac_address));
+    const seenBy = deviceIdToHostname.get(entry.device_id);
+    const loc = seenBy ? (hostnameToLocation.get(seenBy) ?? "Unknown") : "Unknown";
+    const locIps = managedIpsByLocation.get(loc);
+    if (locIps?.has(entry.ipv4_address)) {
+      let locMacs = managedMacsByLocation.get(loc);
+      if (!locMacs) {
+        locMacs = new Set();
+        managedMacsByLocation.set(loc, locMacs);
+      }
+      locMacs.add(normalizeMac(entry.mac_address));
     }
   }
 
   // Include interface MACs (ifPhysAddress) from ALL managed devices so their
   // interfaces never appear as independent unmanaged discovered devices.
   for (const d of allDevicesForExclusion) {
+    const loc = d.location || "Unknown";
+    let locMacs = managedMacsByLocation.get(loc);
+    if (!locMacs) {
+      locMacs = new Set();
+      managedMacsByLocation.set(loc, locMacs);
+    }
     const cached = cache.get<LnmsPort[]>(`ports:${d.hostname}`);
     if (cached) {
       for (const p of cached) {
         const mac = normalizeMac(p.ifPhysAddress ?? "");
-        if (mac && mac.length === 12 && mac !== "000000000000") managedMacs.add(mac);
+        if (mac && mac.length === 12 && mac !== "000000000000") locMacs.add(mac);
       }
     } else {
-      // Fallback for devices without cached ports (disabled/down) — fetch minimal data
       try {
         const res = await librenmsGet<{ ports: Array<{ ifPhysAddress?: string }> }>(`/devices/${d.hostname}/ports`, { columns: "port_id,ifPhysAddress" });
         for (const p of (res.ports ?? [])) {
           const mac = normalizeMac(p.ifPhysAddress ?? "");
-          if (mac && mac.length === 12 && mac !== "000000000000") managedMacs.add(mac);
+          if (mac && mac.length === 12 && mac !== "000000000000") locMacs.add(mac);
         }
       } catch { /* skip */ }
       await delay(50);
@@ -230,7 +253,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
 
   // --- Consolidation: union-find to merge MACs sharing an IP and IPs sharing a MAC ---
-  const arpDevices = consolidateArpDevices(allArpEntries, managedIps, managedMacs, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName);
+  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName);
 
   cache.set("arpLinks", arpLinks, TTL.PORTS);
   cache.set("arpDevices", arpDevices, TTL.PORTS);
@@ -239,8 +262,8 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
 
 function consolidateArpDevices(
   allArpEntries: LnmsArpEntry[],
-  managedIps: Set<string>,
-  managedMacs: Set<string>,
+  managedIpsByLocation: Map<string, Set<string>>,
+  managedMacsByLocation: Map<string, Set<string>>,
   deviceIdToHostname: Map<number, string>,
   hostnameToLocation: Map<string, string>,
   isOverlayIp: (ip: string) => boolean,
@@ -257,7 +280,6 @@ function consolidateArpDevices(
     if (!mac || !ip || ip === "0.0.0.0") continue;
     if (mac === "000000000000" || mac === "FFFFFFFFFFFF") continue;
     if (isBogus(mac)) continue;
-    if (managedIps.has(ip) || managedMacs.has(mac)) continue;
     if (isOverlayIp(ip)) continue;
 
     // Skip MACs learned on ZeroTier interfaces
@@ -267,6 +289,12 @@ function consolidateArpDevices(
     const seenBy = deviceIdToHostname.get(entry.device_id);
     if (!seenBy) continue;
     const location = hostnameToLocation.get(seenBy) ?? "Unknown";
+
+    // Managed exclusion is per-location — overlapping LAN subnets across sites
+    // mean the same IP can be managed at one site and unmanaged at another.
+    const locIps = managedIpsByLocation.get(location);
+    const locMacs = managedMacsByLocation.get(location);
+    if (locIps?.has(ip) || locMacs?.has(mac)) continue;
 
     const pairKey = `${location}:${mac}:${ip}`;
     if (seen.has(pairKey)) continue;
