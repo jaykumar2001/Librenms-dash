@@ -237,8 +237,9 @@ function consolidateArpDevices(
   isOverlayIp: (ip: string) => boolean,
   portIdToIfName: Map<number, string>,
 ): ArpDiscoveredDevice[] {
-  // Phase 1: collect valid (mac, ip) pairs
-  const pairs: Array<{ mac: string; ip: string; deviceId: number; portId: number }> = [];
+  // Phase 1: collect valid (mac, ip) pairs, grouped by location.
+  // Scoping by location prevents cross-site merging from swallowing devices.
+  const pairsByLocation = new Map<string, Array<{ mac: string; ip: string; deviceId: number; portId: number }>>();
   const seen = new Set<string>();
 
   for (const entry of allArpEntries) {
@@ -250,94 +251,110 @@ function consolidateArpDevices(
     if (managedIps.has(ip) || managedMacs.has(mac)) continue;
     if (isOverlayIp(ip)) continue;
 
-    const pairKey = `${mac}:${ip}`;
+    // Skip MACs learned on ZeroTier interfaces
+    const ifName = portIdToIfName.get(entry.port_id);
+    if (ifName && /^zt/i.test(ifName)) continue;
+
+    const seenBy = deviceIdToHostname.get(entry.device_id);
+    if (!seenBy) continue;
+    const location = hostnameToLocation.get(seenBy) ?? "Unknown";
+
+    const pairKey = `${location}:${mac}:${ip}`;
     if (seen.has(pairKey)) continue;
     seen.add(pairKey);
+
+    let pairs = pairsByLocation.get(location);
+    if (!pairs) {
+      pairs = [];
+      pairsByLocation.set(location, pairs);
+    }
     pairs.push({ mac, ip, deviceId: entry.device_id, portId: entry.port_id });
   }
 
-  // Phase 2: union-find — merge entries that share a MAC or an IP
-  const parent = new Map<string, string>();
-
-  function find(x: string): string {
-    let root = x;
-    while (parent.get(root) !== root) root = parent.get(root)!;
-    let cur = x;
-    while (cur !== root) {
-      const next = parent.get(cur)!;
-      parent.set(cur, root);
-      cur = next;
-    }
-    return root;
-  }
-
-  function union(a: string, b: string) {
-    const ra = find(a);
-    const rb = find(b);
-    if (ra !== rb) parent.set(ra, rb);
-  }
-
-  // Initialize: each MAC and each IP is its own parent
-  for (const p of pairs) {
-    const mk = `mac:${p.mac}`;
-    const ik = `ip:${p.ip}`;
-    if (!parent.has(mk)) parent.set(mk, mk);
-    if (!parent.has(ik)) parent.set(ik, ik);
-    union(mk, ik);
-  }
-
-  // Phase 3: group pairs by component
-  const components = new Map<string, { macs: Set<string>; ips: Set<string>; deviceId: number; portId: number }>();
-  for (const p of pairs) {
-    const root = find(`mac:${p.mac}`);
-    let comp = components.get(root);
-    if (!comp) {
-      comp = { macs: new Set(), ips: new Set(), deviceId: p.deviceId, portId: p.portId };
-      components.set(root, comp);
-    }
-    comp.macs.add(p.mac);
-    comp.ips.add(p.ip);
-  }
-
-  // Phase 4: build output — one entry per component
+  // Phase 2–4: run union-find per location so deduplication stays within a site
   const arpDevices: ArpDiscoveredDevice[] = [];
-  for (const [, comp] of components) {
-    const seenBy = deviceIdToHostname.get(comp.deviceId);
-    if (!seenBy) continue;
-    const location = hostnameToLocation.get(seenBy) ?? "Unknown";
+
+  for (const [location, pairs] of pairsByLocation) {
     const siteId = location.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
-    // Pick the best MAC: prefer universally-administered, then best vendor match
-    const macArr = [...comp.macs];
-    const bestMac = macArr.reduce((best, mac) => {
-      const bestIsLocal = isLocallyAdministered(best);
-      const macIsLocal = isLocallyAdministered(mac);
-      if (bestIsLocal && !macIsLocal) return mac;
-      if (!bestIsLocal && macIsLocal) return best;
-      const bestVendor = lookupVendor(best);
-      const macVendor = lookupVendor(mac);
-      if (!bestVendor && macVendor) return mac;
-      return best;
-    });
+    // Union-find — merge entries that share a MAC or an IP within this location
+    const parent = new Map<string, string>();
 
-    const ips = [...comp.ips].sort((a, b) => {
-      const pa = a.split(".").map(Number);
-      const pb = b.split(".").map(Number);
-      for (let i = 0; i < 4; i++) {
-        if (pa[i] !== pb[i]) return pa[i] - pb[i];
+    function find(x: string): string {
+      let root = x;
+      while (parent.get(root) !== root) root = parent.get(root)!;
+      let cur = x;
+      while (cur !== root) {
+        const next = parent.get(cur)!;
+        parent.set(cur, root);
+        cur = next;
       }
-      return 0;
-    });
+      return root;
+    }
 
-    arpDevices.push({
-      mac: bestMac,
-      ips,
-      vendor: lookupVendor(bestMac),
-      location,
-      siteId,
-      seenByHostname: seenBy,
-      seenByInterface: portIdToIfName.get(comp.portId),
-    });
+    function union(a: string, b: string) {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent.set(ra, rb);
+    }
+
+    for (const p of pairs) {
+      const mk = `mac:${p.mac}`;
+      const ik = `ip:${p.ip}`;
+      if (!parent.has(mk)) parent.set(mk, mk);
+      if (!parent.has(ik)) parent.set(ik, ik);
+      union(mk, ik);
+    }
+
+    // Group pairs by component
+    const components = new Map<string, { macs: Set<string>; ips: Set<string>; deviceId: number; portId: number }>();
+    for (const p of pairs) {
+      const root = find(`mac:${p.mac}`);
+      let comp = components.get(root);
+      if (!comp) {
+        comp = { macs: new Set(), ips: new Set(), deviceId: p.deviceId, portId: p.portId };
+        components.set(root, comp);
+      }
+      comp.macs.add(p.mac);
+      comp.ips.add(p.ip);
+    }
+
+    // Build output — one entry per component per location
+    for (const [, comp] of components) {
+      const seenBy = deviceIdToHostname.get(comp.deviceId);
+      if (!seenBy) continue;
+
+      const macArr = [...comp.macs];
+      const bestMac = macArr.reduce((best, mac) => {
+        const bestIsLocal = isLocallyAdministered(best);
+        const macIsLocal = isLocallyAdministered(mac);
+        if (bestIsLocal && !macIsLocal) return mac;
+        if (!bestIsLocal && macIsLocal) return best;
+        const bestVendor = lookupVendor(best);
+        const macVendor = lookupVendor(mac);
+        if (!bestVendor && macVendor) return mac;
+        return best;
+      });
+
+      const ips = [...comp.ips].sort((a, b) => {
+        const pa = a.split(".").map(Number);
+        const pb = b.split(".").map(Number);
+        for (let i = 0; i < 4; i++) {
+          if (pa[i] !== pb[i]) return pa[i] - pb[i];
+        }
+        return 0;
+      });
+
+      arpDevices.push({
+        mac: bestMac,
+        ips,
+        vendor: lookupVendor(bestMac),
+        location,
+        siteId,
+        seenByHostname: seenBy,
+        seenByInterface: portIdToIfName.get(comp.portId),
+      });
+    }
   }
 
   return arpDevices;
