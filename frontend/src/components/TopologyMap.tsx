@@ -64,6 +64,7 @@ export function TopologyMap({ data }: Props) {
   const [snapToGrid, setSnapToGrid] = useState(false);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const popoverHovered = useRef(false);
+  const deviceHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const linkDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const linkTooltipHovered = useRef(false);
   const linkHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -165,11 +166,15 @@ export function TopologyMap({ data }: Props) {
   const handleDeviceHover = useCallback((hostname: string | null, x: number, y: number) => {
     if (dismissTimer.current) { clearTimeout(dismissTimer.current); dismissTimer.current = null; }
     if (hostname) {
+      if (deviceHoverTimer.current) clearTimeout(deviceHoverTimer.current);
       popoverHovered.current = false;
-      const dev = deviceMap.get(hostname);
-      setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
       setHighlightedId(hostname);
+      deviceHoverTimer.current = setTimeout(() => {
+        const dev = deviceMap.get(hostname);
+        setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
+      }, LINK_HOVER_DELAY);
     } else {
+      if (deviceHoverTimer.current) { clearTimeout(deviceHoverTimer.current); deviceHoverTimer.current = null; }
       dismissTimer.current = setTimeout(() => {
         if (!popoverHovered.current) {
           setHoveredDevice(null);
