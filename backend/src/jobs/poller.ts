@@ -282,9 +282,9 @@ function consolidateArpDevices(
     if (isBogus(mac)) continue;
     if (isOverlayIp(ip)) continue;
 
-    // Skip MACs learned on ZeroTier or Docker bridge interfaces
+    // Skip MACs learned on ZeroTier interfaces
     const ifName = portIdToIfName.get(entry.port_id);
-    if (ifName && (/^zt/i.test(ifName) || /^br-/i.test(ifName) || /^docker/i.test(ifName) || ifName === "docker0")) continue;
+    if (ifName && /^zt/i.test(ifName)) continue;
 
     const seenBy = deviceIdToHostname.get(entry.device_id);
     if (!seenBy) continue;
