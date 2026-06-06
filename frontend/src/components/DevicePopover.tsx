@@ -85,22 +85,29 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, onMouseEnter, on
 
           <table className="w-full mb-3 text-xs border-collapse rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
             <tbody>
-              {([
-                ["IP", (data.device.ips?.length ? data.device.ips : [data.device.ip]).join(", ")],
-                ["Operating System", data.device.sysDescr || `${data.device.os} ${data.device.version}` || "—"],
-                ["Hardware", data.device.hardware || "—"],
-                ["Serial", data.device.serial || "—"],
-                ["Contact", data.device.sysContact || "—"],
-                ["Uptime", formatUptime(data.device.uptime)],
-                ["Last Discovered", formatTimestamp(data.device.last_discovered)],
-                ["Last Polled", formatTimestamp(data.device.last_polled)],
-                ["Location", data.device.location],
-              ] as [string, string][]).map(([label, value], i) => (
-                <tr key={label} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
-                  <td className="py-1 px-2 text-gray-400 whitespace-nowrap align-top" style={{ width: "120px" }}>{label}</td>
-                  <td className={`py-1 px-2 break-words ${label === "Serial" ? "font-mono" : ""}`}>{value}</td>
-                </tr>
-              ))}
+              {(() => {
+                const deviceIps = data.device.ips?.length ? data.device.ips : [data.device.ip];
+                const overlayLabels: Record<string, string> = { zerotier: "ZeroTier", wireguard: "WireGuard", tailscale: "Tailscale" };
+                const overlayIps = data.device.overlayIps ?? [];
+                const rows: [string, string, boolean?][] = [
+                  ...deviceIps.map((ip: string, i: number) => [i === 0 ? "IP" : "", ip, true] as [string, string, boolean]),
+                  ...overlayIps.map((o: { type: string; ip: string }, i: number) => [i === 0 ? "Overlay" : "", `${overlayLabels[o.type] ?? o.type}: ${o.ip}`, true] as [string, string, boolean]),
+                  ["Operating System", data.device.sysDescr || `${data.device.os} ${data.device.version}` || "—"],
+                  ["Hardware", data.device.hardware || "—"],
+                  ["Serial", data.device.serial || "—"],
+                  ["Contact", data.device.sysContact || "—"],
+                  ["Uptime", formatUptime(data.device.uptime)],
+                  ["Last Discovered", formatTimestamp(data.device.last_discovered)],
+                  ["Last Polled", formatTimestamp(data.device.last_polled)],
+                  ["Location", data.device.location],
+                ];
+                return rows.map(([label, value, mono], i) => (
+                  <tr key={`${label}-${i}`} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
+                    <td className="py-1 px-2 text-gray-400 whitespace-nowrap align-top" style={{ width: "120px" }}>{label}</td>
+                    <td className={`py-1 px-2 break-words ${mono || label === "Serial" ? "font-mono" : ""}`}>{value}</td>
+                  </tr>
+                ));
+              })()}
             </tbody>
           </table>
 

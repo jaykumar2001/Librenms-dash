@@ -18,6 +18,7 @@ export interface Device {
   sysDescr: string;
   last_discovered: string;
   last_polled: string;
+  overlayIps?: Array<{ type: string; ip: string }>;
 }
 
 export interface Port {

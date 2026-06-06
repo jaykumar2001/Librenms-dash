@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet } from "../librenms/client.js";
-import { findDeviceIps } from "../librenms/overlays.js";
+import { findDeviceIps, getOverlayPortSummaries } from "../librenms/overlays.js";
 import type { DeviceOverview } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsAlert, LnmsHealthSensor } from "../librenms/types.js";
 
@@ -30,6 +30,7 @@ app.get("/:hostname/overview", async (c) => {
 
   const ports = cache.get<LnmsPort[]>(`ports:${hostname}`) ?? [];
   const topPorts = [...ports]
+    .filter((p) => p.ifName !== "lo" && p.ifDescr !== "lo")
     .sort((a, b) => ((b.ifInOctets_rate ?? 0) + (b.ifOutOctets_rate ?? 0)) - ((a.ifInOctets_rate ?? 0) + (a.ifOutOctets_rate ?? 0)))
     .slice(0, 5);
 
@@ -59,6 +60,9 @@ app.get("/:hostname/overview", async (c) => {
       sysDescr: device.sysDescr,
       last_discovered: device.last_discovered,
       last_polled: device.last_polled,
+      overlayIps: getOverlayPortSummaries(ports, ips)
+        .filter((p) => p.ip)
+        .map((p) => ({ type: p.overlayType, ip: p.ip })),
     },
     health: health.map((s) => ({
       sensor_id: s.sensor_id,
