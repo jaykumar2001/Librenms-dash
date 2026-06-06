@@ -41,7 +41,7 @@ async function fetchLinks(): Promise<LnmsLink[]> {
   return (res.links ?? []).filter((l) => l.active === 1);
 }
 
-const PORT_COLUMNS = "port_id,device_id,ifName,ifDescr,ifAlias,ifSpeed,ifInOctets_rate,ifOutOctets_rate,ifOperStatus,ifAdminStatus,ifType";
+const PORT_COLUMNS = "port_id,device_id,ifName,ifDescr,ifAlias,ifSpeed,ifInOctets_rate,ifOutOctets_rate,ifOperStatus,ifAdminStatus,ifType,ifPhysAddress";
 
 async function fetchDevicePorts(hostname: string): Promise<LnmsPort[]> {
   const res = await librenmsGet<{ ports: LnmsPort[] }>(`/devices/${hostname}/ports`, { columns: PORT_COLUMNS });
@@ -207,17 +207,26 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
     }
   }
 
-  // Also fetch port MACs from disabled devices to exclude their interfaces
+  // Include interface MACs (ifPhysAddress) from ALL managed devices so their
+  // interfaces never appear as independent unmanaged discovered devices.
   for (const d of allDevicesForExclusion) {
-    if (devices.some(active => active.device_id === d.device_id)) continue;
-    try {
-      const res = await librenmsGet<{ ports: Array<{ ifPhysAddress?: string }> }>(`/devices/${d.hostname}/ports`, { columns: "port_id,ifPhysAddress" });
-      for (const p of (res.ports ?? [])) {
+    const cached = cache.get<LnmsPort[]>(`ports:${d.hostname}`);
+    if (cached) {
+      for (const p of cached) {
         const mac = normalizeMac(p.ifPhysAddress ?? "");
         if (mac && mac.length === 12 && mac !== "000000000000") managedMacs.add(mac);
       }
-    } catch { /* skip */ }
-    await delay(50);
+    } else {
+      // Fallback for devices without cached ports (disabled/down) — fetch minimal data
+      try {
+        const res = await librenmsGet<{ ports: Array<{ ifPhysAddress?: string }> }>(`/devices/${d.hostname}/ports`, { columns: "port_id,ifPhysAddress" });
+        for (const p of (res.ports ?? [])) {
+          const mac = normalizeMac(p.ifPhysAddress ?? "");
+          if (mac && mac.length === 12 && mac !== "000000000000") managedMacs.add(mac);
+        }
+      } catch { /* skip */ }
+      await delay(50);
+    }
   }
 
   // --- Consolidation: union-find to merge MACs sharing an IP and IPs sharing a MAC ---

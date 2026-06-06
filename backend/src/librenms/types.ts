@@ -33,6 +33,7 @@ export interface LnmsPort {
   ifOperStatus: string;
   ifAdminStatus: string;
   ifType: string;
+  ifPhysAddress?: string;
 }
 
 export interface LnmsDeviceIp {
