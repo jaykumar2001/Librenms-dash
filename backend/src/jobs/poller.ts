@@ -126,6 +126,9 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
       locIps.add(ip.ipv4_address);
     }
   }
+  // Active device IDs — used to restrict which devices can be "seenBy" sources
+  const activeDeviceIds = new Set(devices.map((d) => d.device_id));
+
   // Active devices also provide IP→hostname mapping for ARP link building
   for (const d of devices) {
     ipToHostname.set(d.ip, d.hostname);
@@ -254,7 +257,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
 
   // --- Consolidation: union-find to merge MACs sharing an IP and IPs sharing a MAC ---
-  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName);
+  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, activeDeviceIds);
 
   cache.set("arpLinks", arpLinks, TTL.PORTS);
   cache.set("arpDevices", arpDevices, TTL.PORTS);
@@ -269,6 +272,7 @@ function consolidateArpDevices(
   hostnameToLocation: Map<string, string>,
   isOverlayIp: (ip: string) => boolean,
   portIdToIfName: Map<number, string>,
+  activeDeviceIds: Set<number>,
 ): ArpDiscoveredDevice[] {
   // Phase 1: collect valid (mac, ip) pairs, grouped by location.
   // Scoping by location prevents cross-site merging from swallowing devices.
@@ -276,6 +280,9 @@ function consolidateArpDevices(
   const seen = new Set<string>();
 
   for (const entry of allArpEntries) {
+    // Only use ARP entries from active (non-disabled) devices as sources
+    if (!activeDeviceIds.has(entry.device_id)) continue;
+
     const mac = normalizeMac(entry.mac_address);
     const ip = entry.ipv4_address;
     if (!mac || !ip || ip === "0.0.0.0") continue;
