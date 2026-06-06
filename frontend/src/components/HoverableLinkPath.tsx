@@ -7,13 +7,15 @@ interface Props {
   ty: number;
   color: string;
   hovered: boolean;
+  highlighted?: boolean;
   linkKey: string;
   onMouseEnter: (e: React.MouseEvent) => void;
   onMouseLeave: () => void;
 }
 
-export function HoverableLinkPath({ sx, sy, tx, ty, color, hovered, onMouseEnter, onMouseLeave }: Props) {
+export function HoverableLinkPath({ sx, sy, tx, ty, color, hovered, highlighted, onMouseEnter, onMouseLeave }: Props) {
   const d = curvedLinkPath(sx, sy, tx, ty);
+  const active = hovered || highlighted;
 
   return (
     <g>
@@ -27,13 +29,13 @@ export function HoverableLinkPath({ sx, sy, tx, ty, color, hovered, onMouseEnter
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       />
-      {/* Glow behind when hovered */}
-      {hovered && (
+      {/* Glow behind when active */}
+      {active && (
         <path
           d={d}
           stroke={color}
           strokeWidth={6}
-          strokeOpacity={0.3}
+          strokeOpacity={hovered ? 0.3 : 0.2}
           fill="none"
           pointerEvents="none"
         />
@@ -42,8 +44,8 @@ export function HoverableLinkPath({ sx, sy, tx, ty, color, hovered, onMouseEnter
       <path
         d={d}
         stroke={color}
-        strokeWidth={hovered ? 2.5 : 1.5}
-        strokeOpacity={hovered ? 1 : 0.6}
+        strokeWidth={active ? 2.5 : 1.5}
+        strokeOpacity={active ? 1 : 0.6}
         fill="none"
         pointerEvents="none"
       />

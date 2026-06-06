@@ -4,11 +4,12 @@ import { curvedLinkPath } from "@/lib/linkGeometry";
 interface Props {
   link: LayoutLink;
   hovered: boolean;
+  highlighted?: boolean;
   onMouseEnter: (e: React.MouseEvent) => void;
   onMouseLeave: () => void;
 }
 
-export function OverlayLinkLine({ link, hovered, onMouseEnter, onMouseLeave }: Props) {
+export function OverlayLinkLine({ link, hovered, highlighted, onMouseEnter, onMouseLeave }: Props) {
   const sx = link.source.x;
   const sy = link.source.y;
   const tx = link.target.x;
@@ -29,13 +30,13 @@ export function OverlayLinkLine({ link, hovered, onMouseEnter, onMouseLeave }: P
         onMouseEnter={onMouseEnter}
         onMouseLeave={onMouseLeave}
       />
-      {/* Glow behind when hovered */}
-      {hovered && (
+      {/* Glow behind when active */}
+      {(hovered || highlighted) && (
         <path
           d={d}
           stroke={link.color}
           strokeWidth={6}
-          strokeOpacity={0.25}
+          strokeOpacity={hovered ? 0.25 : 0.15}
           fill="none"
           pointerEvents="none"
         />
@@ -44,8 +45,8 @@ export function OverlayLinkLine({ link, hovered, onMouseEnter, onMouseLeave }: P
       <path
         d={d}
         stroke={link.color}
-        strokeWidth={hovered ? 2.5 : 1.8}
-        strokeOpacity={hovered ? 1 : 0.6}
+        strokeWidth={hovered || highlighted ? 2.5 : 1.8}
+        strokeOpacity={hovered || highlighted ? 1 : 0.6}
         fill="none"
         pointerEvents="none"
       />
