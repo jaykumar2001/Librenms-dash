@@ -392,6 +392,7 @@ function consolidateArpDevices(
 
       arpDevices.push({
         mac: bestMac,
+        macs: macArr,
         ips,
         vendor: lookupVendor(bestMac),
         location,

@@ -3,6 +3,7 @@ import { cache } from "../cache/store.js";
 import type { TopologyResponse, Site, DeviceSummary, OverlayGroup, NeighborLink, ArpLink, ArpDiscoveredDevice } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsLocation, LnmsAlert, LnmsDeviceIp, LnmsLink } from "../librenms/types.js";
 import { getOverlayPortSummaries, findLanIp, findDeviceIps } from "../librenms/overlays.js";
+import { normalizeMac } from "../librenms/oui.js";
 
 const app = new Hono();
 
@@ -44,9 +45,12 @@ app.get("/", (c) => {
 
     let totalIn = 0;
     let totalOut = 0;
+    const macSet = new Set<string>();
     for (const p of ports) {
       totalIn += p.ifInOctets_rate ?? 0;
       totalOut += p.ifOutOctets_rate ?? 0;
+      const mac = normalizeMac(p.ifPhysAddress ?? "");
+      if (mac && mac.length === 12 && mac !== "000000000000") macSet.add(mac);
     }
 
     const summary: DeviceSummary = {
@@ -56,6 +60,7 @@ app.get("/", (c) => {
       ip: device.ip,
       lanIp: findLanIp(device.ip, ips),
       ips: findDeviceIps(ips, ports),
+      macs: [...macSet],
       os: device.os,
       icon: device.icon,
       status: device.status,

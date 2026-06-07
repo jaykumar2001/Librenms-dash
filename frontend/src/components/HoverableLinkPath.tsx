@@ -1,4 +1,4 @@
-import { curvedLinkPath } from "@/lib/linkGeometry";
+import { curvedLinkPath, type Side } from "@/lib/linkGeometry";
 
 interface Props {
   sx: number;
@@ -9,12 +9,14 @@ interface Props {
   hovered: boolean;
   highlighted?: boolean;
   linkKey: string;
+  sourceSide?: Side;
+  targetSide?: Side;
   onMouseEnter: (e: React.MouseEvent) => void;
   onMouseLeave: () => void;
 }
 
-export function HoverableLinkPath({ sx, sy, tx, ty, color, hovered, highlighted, onMouseEnter, onMouseLeave }: Props) {
-  const d = curvedLinkPath(sx, sy, tx, ty);
+export function HoverableLinkPath({ sx, sy, tx, ty, color, hovered, highlighted, sourceSide, targetSide, onMouseEnter, onMouseLeave }: Props) {
+  const d = curvedLinkPath(sx, sy, tx, ty, sourceSide, targetSide);
   const active = hovered || highlighted;
 
   return (
