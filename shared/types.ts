@@ -69,6 +69,7 @@ export interface DeviceSummary {
   ip: string;
   lanIp: string;
   ips: string[];
+  macs: string[];
   os: string;
   icon: string;
   status: number;
@@ -132,6 +133,7 @@ export interface ArpLink {
 
 export interface ArpDiscoveredDevice {
   mac: string;
+  macs: string[];
   ips: string[];
   vendor: string;
   location: string;

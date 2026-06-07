@@ -9,7 +9,7 @@ import { DeviceNode } from "./DeviceNode";
 import { ArpDeviceNode } from "./ArpDeviceNode";
 import { DevicePopover } from "./DevicePopover";
 import { LinkTooltip, type LinkTooltipData } from "./LinkTooltip";
-import { curvedLinkPath, pointToPointPath, DEVICE_HALF, ARP_HALF } from "@/lib/linkGeometry";
+import { curvedLinkPath, pointToPointPath, computeDominantSide, DEVICE_HALF, ARP_HALF, type Side } from "@/lib/linkGeometry";
 
 interface Props {
   data: TopologyResponse;
@@ -137,6 +137,64 @@ export function TopologyMap({ data }: Props) {
   }, [nodes]);
 
   const visibleLinks = links.filter((l) => !hiddenOverlays[l.overlayType]);
+
+  // Pre-compute a single anchor side per device based on all its visible peers.
+  const deviceSide = useMemo(() => {
+    const peersMap = new Map<string, { x: number; y: number }[]>();
+    const addPeer = (hostname: string, px: number, py: number) => {
+      let arr = peersMap.get(hostname);
+      if (!arr) { arr = []; peersMap.set(hostname, arr); }
+      arr.push({ x: px, y: py });
+    };
+    // Overlay links
+    for (const l of visibleLinks) {
+      if (l.source.x != null && l.target.x != null) {
+        addPeer(l.source.hostname, l.target.x, l.target.y);
+        addPeer(l.target.hostname, l.source.x, l.source.y);
+      }
+    }
+    // Neighbor links
+    if (showNeighbors) {
+      for (const nl of neighborLinks) {
+        if (nl.source.x != null && nl.target.x != null) {
+          addPeer(nl.source.hostname, nl.target.x, nl.target.y);
+          addPeer(nl.target.hostname, nl.source.x, nl.source.y);
+        }
+      }
+    }
+    // ARP links
+    if (showArp) {
+      for (const al of arpLinks) {
+        if (al.source.x != null && al.target.x != null) {
+          addPeer(al.source.hostname, al.target.x, al.target.y);
+          addPeer(al.target.hostname, al.source.x, al.source.y);
+        }
+      }
+    }
+    // ARP device connector links
+    if (showArpDevices) {
+      for (const ad of arpDeviceNodes) {
+        addPeer(ad.seenByHostname, ad.x, ad.y);
+      }
+    }
+    const result = new Map<string, Side>();
+    for (const node of nodes) {
+      const peers = peersMap.get(node.hostname);
+      if (peers && peers.length > 0) {
+        result.set(node.hostname, computeDominantSide(node.x, node.y, peers, DEVICE_HALF));
+      }
+    }
+    // Also compute sides for ARP device nodes
+    if (showArpDevices) {
+      for (const ad of arpDeviceNodes) {
+        const parent = nodeByHostname.get(ad.seenByHostname);
+        if (parent) {
+          result.set(ad.mac, computeDominantSide(ad.x, ad.y, [{ x: parent.x, y: parent.y }], ARP_HALF));
+        }
+      }
+    }
+    return result;
+  }, [visibleLinks, showNeighbors, neighborLinks, showArp, arpLinks, showArpDevices, arpDeviceNodes, nodes, nodeByHostname]);
 
   const getSnapCandidates = useCallback((exclude?: { type: "site" | "device" | "site-resize"; id: string }) => {
     const x: number[] = [];
@@ -516,6 +574,8 @@ export function TopologyMap({ data }: Props) {
                 color={NEIGHBOR_COLOR}
                 hovered={hoveredLinkKey === key}
                 highlighted={linked}
+                sourceSide={deviceSide.get(nl.source.hostname)}
+                targetSide={deviceSide.get(nl.target.hostname)}
                 onMouseEnter={(e) => showLinkTooltip(key, {
                   type: "lldp",
                   screenX: e.clientX,
@@ -553,6 +613,8 @@ export function TopologyMap({ data }: Props) {
                 color={ARP_COLOR}
                 hovered={hoveredLinkKey === key}
                 highlighted={linked}
+                sourceSide={deviceSide.get(al.source.hostname)}
+                targetSide={deviceSide.get(al.target.hostname)}
                 onMouseEnter={(e) => showLinkTooltip(key, {
                   type: "arp",
                   screenX: e.clientX,
@@ -590,6 +652,8 @@ export function TopologyMap({ data }: Props) {
                 link={link}
                 hovered={hoveredLinkKey === key}
                 highlighted={linked}
+                sourceSide={deviceSide.get(link.source.hostname)}
+                targetSide={deviceSide.get(link.target.hostname)}
                 onMouseEnter={(e) => showLinkTooltip(key, {
                   type: "overlay",
                   screenX: e.clientX,
@@ -629,8 +693,10 @@ export function TopologyMap({ data }: Props) {
             const parent = nodeByHostname.get(ad.seenByHostname);
             if (!parent || parent.x == null || parent.y == null) return null;
             const d = pointToPointPath(
-              parent.x, parent.y + DEVICE_HALF.halfH,
-              ad.x, ad.y - ARP_HALF.halfH,
+              parent.x, parent.y,
+              ad.x, ad.y,
+              deviceSide.get(ad.seenByHostname),
+              deviceSide.get(ad.mac),
             );
             const key = `arpdev-link-${ad.mac}`;
             const hovered = hoveredLinkKey === key;

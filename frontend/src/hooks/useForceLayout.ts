@@ -159,6 +159,7 @@ function layoutAll(
   viewW: number,
   siteOrientations: Record<string, SiteOrientation> = {},
   showArpDevices = false,
+  viewH = 800,
 ): { sites: SiteCluster[]; nodes: LayoutNode[]; links: LayoutLink[]; neighborLinks: NeighborLayoutLink[]; arpLinks: ArpLayoutLink[]; deviceGroups: DeviceGroup[]; arpDeviceNodes: ArpDeviceLayoutNode[] } {
 
   // Sort sites: largest first
@@ -171,34 +172,31 @@ function layoutAll(
     arpDevicesBySite.get(ad.siteId)!.push(ad);
   }
 
-  const siteClusters: SiteCluster[] = [];
-  const allNodes: LayoutNode[] = [];
-  const nodeMap = new Map<string, LayoutNode>();
-  const allGroups: DeviceGroup[] = [];
-  const allArpDeviceNodes: ArpDeviceLayoutNode[] = [];
-
-  let curSiteX = SITE_GAP;
-  let curSiteY = SITE_GAP;
-  let siteRowH = 0;
+  // Pre-compute site dimensions to determine optimal placement
+  const sitePreLayout: Array<{
+    site: (typeof sorted)[number];
+    orientation: SiteOrientation;
+    groups: GroupLayout[];
+    groupPositions: Array<{ gx: number; gy: number }>;
+    siteW: number;
+    siteH: number;
+    arpSectionH: number;
+    arpCols: number;
+    totalH: number;
+  }> = [];
 
   for (const site of sorted) {
     const orientation = siteOrientations[site.id] ?? "landscape";
-
-    // Group devices by OS
     const osBuckets = new Map<string, DeviceSummary[]>();
     for (const dev of site.devices) {
       const key = dev.os;
       if (!osBuckets.has(key)) osBuckets.set(key, []);
       osBuckets.get(key)!.push(dev);
     }
-
     const groups = [...osBuckets.values()].map((devices) => layoutGroup(devices, orientation));
-    // Sort groups largest first
     groups.sort((a, b) => b.devices.length - a.devices.length);
-
     const { siteW, siteH, groupPositions } = layoutSite(groups, orientation);
 
-    // Calculate extra height for ARP discovered devices
     const siteArpDevices = arpDevicesBySite.get(site.id) ?? [];
     let arpSectionH = 0;
     let arpCols = 1;
@@ -208,25 +206,79 @@ function layoutAll(
       arpSectionH = ARP_SECTION_LABEL_H + ARP_SECTION_PAD * 2 + arpRows * ARP_NODE_H + Math.max(0, arpRows - 1) * ARP_NODE_GAP_Y + GROUP_GAP;
     }
 
-    // Wrap site to next row if needed
-    const totalSiteH = siteH + arpSectionH;
-    if (curSiteX + siteW + SITE_GAP > viewW && curSiteX > SITE_GAP) {
+    sitePreLayout.push({ site, orientation, groups, groupPositions, siteW, siteH, arpSectionH, arpCols, totalH: siteH + arpSectionH });
+  }
+
+  // Determine placement: try to fit all sites within viewW × viewH.
+  // Reserve space for the top control bar (~56px).
+  const TOP_RESERVE = 56;
+  const usableH = Math.max(viewH - TOP_RESERVE, 300);
+  const usableW = Math.max(viewW, 400);
+
+  // Place sites using a row-wrapping algorithm that respects both width and height.
+  // Try the natural flow first; if it overflows vertically, allow wider wrapping.
+  const sitePositions: Array<{ x: number; y: number }> = [];
+  let curSiteX = SITE_GAP;
+  let curSiteY = SITE_GAP;
+  let siteRowH = 0;
+
+  for (const pre of sitePreLayout) {
+    if (curSiteX + pre.siteW + SITE_GAP > usableW && curSiteX > SITE_GAP) {
       curSiteX = SITE_GAP;
       curSiteY += siteRowH + SITE_GAP;
       siteRowH = 0;
     }
+    sitePositions.push({ x: curSiteX, y: curSiteY });
+    curSiteX += pre.siteW + SITE_GAP;
+    siteRowH = Math.max(siteRowH, pre.totalH);
+  }
 
-    const siteX = curSiteX;
-    const siteY = curSiteY;
+  const totalLayoutH = curSiteY + siteRowH + SITE_GAP;
+  const totalLayoutW = Math.max(...sitePositions.map((p, i) => p.x + sitePreLayout[i].siteW + SITE_GAP));
+
+  // If the layout overflows, scale positions (and offset) to fit the usable area.
+  // We scale positions only (not box internals) to avoid text becoming unreadable.
+  let offsetX = 0;
+  let offsetY = 0;
+  let scale = 1;
+  if (totalLayoutH > usableH || totalLayoutW > usableW) {
+    const scaleX = totalLayoutW > usableW ? usableW / totalLayoutW : 1;
+    const scaleY = totalLayoutH > usableH ? usableH / totalLayoutH : 1;
+    scale = Math.min(scaleX, scaleY);
+    // Center the layout in the available space
+    offsetX = (usableW - totalLayoutW * scale) / 2;
+    offsetY = (usableH - totalLayoutH * scale) / 2 + TOP_RESERVE;
+  } else {
+    // Center when it fits
+    offsetX = (usableW - totalLayoutW) / 2;
+    offsetY = (usableH - totalLayoutH) / 2 + TOP_RESERVE;
+    // Don't go negative
+    offsetX = Math.max(offsetX, 0);
+    offsetY = Math.max(offsetY, 0);
+  }
+
+  const siteClusters: SiteCluster[] = [];
+  const allNodes: LayoutNode[] = [];
+  const nodeMap = new Map<string, LayoutNode>();
+  const allGroups: DeviceGroup[] = [];
+  const allArpDeviceNodes: ArpDeviceLayoutNode[] = [];
+
+  for (let si = 0; si < sitePreLayout.length; si++) {
+    const pre = sitePreLayout[si];
+    const pos = sitePositions[si];
+    const { site, groups, groupPositions, siteW, siteH, arpCols } = pre;
+
+    const siteX = pos.x * scale + offsetX;
+    const siteY = pos.y * scale + offsetY;
 
     siteClusters.push({
       id: site.id,
       location: site.location,
-      orientation,
+      orientation: pre.orientation,
       x: siteX,
       y: siteY,
       width: siteW,
-      height: totalSiteH,
+      height: pre.totalH,
     });
 
     // Place devices within groups
@@ -266,6 +318,7 @@ function layoutAll(
     });
 
     // Place ARP discovered devices below the managed device groups
+    const siteArpDevices = arpDevicesBySite.get(site.id) ?? [];
     if (showArpDevices && siteArpDevices.length > 0) {
       const arpStartY = siteY + siteH + GROUP_GAP;
       const arpStartX = siteX + SITE_PAD + ARP_SECTION_PAD;
@@ -285,9 +338,6 @@ function layoutAll(
         });
       });
     }
-
-    curSiteX += siteW + SITE_GAP;
-    siteRowH = Math.max(siteRowH, totalSiteH);
   }
 
   // Build overlay links
@@ -572,6 +622,7 @@ function relayoutArpNodes(
 function layoutSignature(
   data: TopologyResponse,
   containerWidth: number,
+  containerHeight: number,
   siteOrientations: Record<string, SiteOrientation>,
   showArpDevices: boolean,
 ): string {
@@ -580,13 +631,13 @@ function layoutSignature(
     .sort()
     .join("|");
   const arp = (data.arpDevices ?? []).map((a) => a.mac).sort().join(",");
-  return `${sites}#${arp}@${containerWidth}|${JSON.stringify(siteOrientations)}|${showArpDevices}`;
+  return `${sites}#${arp}@${containerWidth}x${containerHeight}|${JSON.stringify(siteOrientations)}|${showArpDevices}`;
 }
 
 export function useForceLayout(
   data: TopologyResponse | undefined,
   containerWidth: number,
-  _containerHeight: number,
+  containerHeight: number,
   showArpDevices = false,
 ) {
   const [nodes, setNodes] = useState<LayoutNode[]>([]);
@@ -631,10 +682,10 @@ export function useForceLayout(
     if (!data || !containerWidth) return;
     // Skip regenerating the layout (which discards manual drags/resizes) when the
     // topology and layout inputs are unchanged — e.g. on the 5-minute background poll.
-    const sig = layoutSignature(data, containerWidth, siteOrientations, showArpDevices);
+    const sig = layoutSignature(data, containerWidth, containerHeight, siteOrientations, showArpDevices);
     if (sig === layoutSigRef.current) return;
     layoutSigRef.current = sig;
-    const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices);
+    const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices, containerHeight);
     setSites(result.sites);
     setNodes(result.nodes);
     setLinks(result.links);
@@ -646,8 +697,8 @@ export function useForceLayout(
 
   const resetLayout = useCallback(() => {
     if (!data || !containerWidth) return;
-    layoutSigRef.current = layoutSignature(data, containerWidth, siteOrientations, showArpDevices);
-    const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices);
+    layoutSigRef.current = layoutSignature(data, containerWidth, containerHeight, siteOrientations, showArpDevices);
+    const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices, containerHeight);
     setSites(result.sites);
     setNodes(result.nodes);
     setLinks(result.links);

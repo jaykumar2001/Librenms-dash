@@ -1,22 +1,24 @@
 import type { LayoutLink } from "@/hooks/useForceLayout";
-import { curvedLinkPath } from "@/lib/linkGeometry";
+import { curvedLinkPath, type Side } from "@/lib/linkGeometry";
 
 interface Props {
   link: LayoutLink;
   hovered: boolean;
   highlighted?: boolean;
+  sourceSide?: Side;
+  targetSide?: Side;
   onMouseEnter: (e: React.MouseEvent) => void;
   onMouseLeave: () => void;
 }
 
-export function OverlayLinkLine({ link, hovered, highlighted, onMouseEnter, onMouseLeave }: Props) {
+export function OverlayLinkLine({ link, hovered, highlighted, sourceSide, targetSide, onMouseEnter, onMouseLeave }: Props) {
   const sx = link.source.x;
   const sy = link.source.y;
   const tx = link.target.x;
   const ty = link.target.y;
   if (sx == null || sy == null || tx == null || ty == null) return null;
 
-  const d = curvedLinkPath(sx, sy, tx, ty);
+  const d = curvedLinkPath(sx, sy, tx, ty, sourceSide, targetSide);
 
   return (
     <g>
