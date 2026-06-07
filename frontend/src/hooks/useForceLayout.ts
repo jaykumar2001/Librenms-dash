@@ -160,7 +160,7 @@ function layoutAll(
   siteOrientations: Record<string, SiteOrientation> = {},
   showArpDevices = false,
   viewH = 800,
-): { sites: SiteCluster[]; nodes: LayoutNode[]; links: LayoutLink[]; neighborLinks: NeighborLayoutLink[]; arpLinks: ArpLayoutLink[]; deviceGroups: DeviceGroup[]; arpDeviceNodes: ArpDeviceLayoutNode[] } {
+): { sites: SiteCluster[]; nodes: LayoutNode[]; links: LayoutLink[]; neighborLinks: NeighborLayoutLink[]; arpLinks: ArpLayoutLink[]; deviceGroups: DeviceGroup[]; arpDeviceNodes: ArpDeviceLayoutNode[]; initialScale: number } {
 
   // Sort sites: largest first
   const sorted = [...data.sites].sort((a, b) => b.devices.length - a.devices.length);
@@ -236,26 +236,24 @@ function layoutAll(
   const totalLayoutH = curSiteY + siteRowH + SITE_GAP;
   const totalLayoutW = Math.max(...sitePositions.map((p, i) => p.x + sitePreLayout[i].siteW + SITE_GAP));
 
-  // If the layout overflows, scale positions (and offset) to fit the usable area.
-  // We scale positions only (not box internals) to avoid text becoming unreadable.
-  let offsetX = 0;
-  let offsetY = 0;
+  // Compute the scale needed so everything fits in the viewport.
+  // This is returned as `initialScale` and applied as a uniform SVG transform
+  // in TopologyMap — so ALL elements (boxes, nodes, text) scale together correctly.
   let scale = 1;
   if (totalLayoutH > usableH || totalLayoutW > usableW) {
     const scaleX = totalLayoutW > usableW ? usableW / totalLayoutW : 1;
     const scaleY = totalLayoutH > usableH ? usableH / totalLayoutH : 1;
     scale = Math.min(scaleX, scaleY);
-    // Center the layout in the available space
-    offsetX = (usableW - totalLayoutW * scale) / 2;
-    offsetY = (usableH - totalLayoutH * scale) / 2 + TOP_RESERVE;
-  } else {
-    // Center when it fits
-    offsetX = (usableW - totalLayoutW) / 2;
-    offsetY = (usableH - totalLayoutH) / 2 + TOP_RESERVE;
-    // Don't go negative
-    offsetX = Math.max(offsetX, 0);
-    offsetY = Math.max(offsetY, 0);
   }
+
+  // Natural-space centering: place coordinates so that when scaled by `scale`
+  // the result is centered in the viewport.
+  // scaled content width  = totalLayoutW * scale
+  // we want it at x = (usableW - totalLayoutW * scale) / 2 in screen space
+  // which in natural space means offsetX = (usableW/scale - totalLayoutW) / 2  ... but
+  // it is simpler to just place everything at 0,TOP_RESERVE and let the SVG transform handle centering.
+  const offsetX = SITE_GAP;
+  const offsetY = TOP_RESERVE / scale;
 
   const siteClusters: SiteCluster[] = [];
   const allNodes: LayoutNode[] = [];
@@ -268,8 +266,11 @@ function layoutAll(
     const pos = sitePositions[si];
     const { site, groups, groupPositions, siteW, siteH, arpCols } = pre;
 
-    const siteX = pos.x * scale + offsetX;
-    const siteY = pos.y * scale + offsetY;
+    // All coordinates are in natural (unscaled) layout space.
+    // The caller applies initialScale as a uniform SVG transform so that
+    // site boxes, device nodes, and text all scale together.
+    const siteX = pos.x + offsetX;
+    const siteY = pos.y + offsetY;
 
     siteClusters.push({
       id: site.id,
@@ -394,7 +395,7 @@ function layoutAll(
     }
   }
 
-  return { sites: siteClusters, nodes: allNodes, links, neighborLinks, arpLinks, deviceGroups: allGroups, arpDeviceNodes: allArpDeviceNodes };
+  return { sites: siteClusters, nodes: allNodes, links, neighborLinks, arpLinks, deviceGroups: allGroups, arpDeviceNodes: allArpDeviceNodes, initialScale: scale };
 }
 
 function fitDeviceGroupsToNodes(groups: DeviceGroup[], nextNodes: LayoutNode[]): DeviceGroup[] {
@@ -648,6 +649,7 @@ export function useForceLayout(
   const [sites, setSites] = useState<SiteCluster[]>([]);
   const [deviceGroups, setDeviceGroups] = useState<DeviceGroup[]>([]);
   const [siteOrientations, setSiteOrientations] = useState<Record<string, SiteOrientation>>({});
+  const [initialScale, setInitialScale] = useState(1);
 
   const nodesRef = useRef(nodes);
   nodesRef.current = nodes;
@@ -693,6 +695,7 @@ export function useForceLayout(
     setArpLinks(result.arpLinks);
     setArpDeviceNodes(result.arpDeviceNodes);
     setDeviceGroups(result.deviceGroups);
+    setInitialScale(result.initialScale);
   }, [data, containerWidth, siteOrientations, showArpDevices]);
 
   const resetLayout = useCallback(() => {
@@ -706,6 +709,7 @@ export function useForceLayout(
     setArpLinks(result.arpLinks);
     setArpDeviceNodes(result.arpDeviceNodes);
     setDeviceGroups(result.deviceGroups);
+    setInitialScale(result.initialScale);
   }, [data, containerWidth, siteOrientations, showArpDevices]);
 
   const toggleSiteOrientation = useCallback((siteId: string) => {
@@ -780,6 +784,7 @@ export function useForceLayout(
     arpDeviceNodes,
     sites,
     deviceGroups,
+    initialScale,
     resetLayout,
     moveSite,
     moveDevice,

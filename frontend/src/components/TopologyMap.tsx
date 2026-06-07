@@ -75,6 +75,7 @@ export function TopologyMap({ data }: Props) {
   const alertTooltipHovered = useRef(false);
 
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const lastInitialScaleRef = useRef(1);
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const dragTarget = useRef<{
@@ -109,12 +110,21 @@ export function TopologyMap({ data }: Props) {
     arpDeviceNodes,
     sites,
     deviceGroups,
+    initialScale,
     resetLayout,
     moveSite,
     moveDevice,
     resizeSite,
     toggleSiteOrientation,
   } = useForceLayout(data, dimensions.width, dimensions.height, showArpDevices);
+
+  // When the layout regenerates (new topology, orientation change, reset), snap
+  // the SVG transform back to the computed fit-scale so nothing overflows.
+  useEffect(() => {
+    if (initialScale === lastInitialScaleRef.current) return;
+    lastInitialScaleRef.current = initialScale;
+    setTransform({ x: 0, y: 0, scale: initialScale });
+  }, [initialScale]);
 
   const deviceMap = useMemo(() => {
     const map = new Map<string, DeviceSummary>();
