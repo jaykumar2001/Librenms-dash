@@ -59,7 +59,7 @@ export function buildOverlayLinks(
     const ips = deviceIps.get(hostname) ?? [];
     const portIdToIp = new Map<number, string>();
     for (const ipEntry of ips) {
-      portIdToIp.set(ipEntry.port_id, ipEntry.ipv4_address);
+      if (ipEntry.ipv4_address) portIdToIp.set(ipEntry.port_id, ipEntry.ipv4_address);
     }
 
     for (const port of ports) {
@@ -74,6 +74,10 @@ export function buildOverlayLinks(
             break;
           }
         }
+      }
+      if (!ip) {
+        const match = ips.find((e) => e.port_id === port.port_id && e.ipv4_address);
+        if (match) ip = match.ipv4_address;
       }
 
       // Skip wg-named interfaces that actually carry a Tailscale CGNAT address
@@ -127,7 +131,7 @@ export function getOverlayPortSummaries(
 ): OverlayPortSummary[] {
   const portIdToIp = new Map<number, string>();
   for (const ipEntry of ips) {
-    portIdToIp.set(ipEntry.port_id, ipEntry.ipv4_address);
+    if (ipEntry.ipv4_address) portIdToIp.set(ipEntry.port_id, ipEntry.ipv4_address);
   }
 
   // Dedup: one entry per overlay type, pick the one with an IP and highest traffic
@@ -145,6 +149,10 @@ export function getOverlayPortSummaries(
           break;
         }
       }
+    }
+    if (!ip) {
+      const match = ips.find((e) => e.port_id === port.port_id && e.ipv4_address);
+      if (match) ip = match.ipv4_address;
     }
 
     const existing = best.get(overlayType);

@@ -10,13 +10,11 @@ interface SiteProps {
   index: number;
   interactive?: boolean;
   onMouseDown?: (event: MouseEvent<SVGGElement>) => void;
-  onToggleOrientation?: (event: MouseEvent<SVGGElement>) => void;
   onResizeMouseDown?: (event: MouseEvent<SVGGElement>) => void;
 }
 
-export function SiteGroup({ site, index, interactive = true, onMouseDown, onToggleOrientation, onResizeMouseDown }: SiteProps) {
+export function SiteGroup({ site, index, interactive = true, onMouseDown, onResizeMouseDown }: SiteProps) {
   const color = SITE_COLORS[index % SITE_COLORS.length];
-  const orientationLabel = site.orientation === "portrait" ? "P" : "L";
 
   return (
     <g onMouseDown={onMouseDown} style={{ cursor: interactive ? "move" : "grab" }}>
@@ -44,35 +42,6 @@ export function SiteGroup({ site, index, interactive = true, onMouseDown, onTogg
       >
         {site.location}
       </text>
-      <g
-        onMouseDown={(e) => e.stopPropagation()}
-        onClick={onToggleOrientation}
-        style={{ cursor: "pointer" }}
-      >
-        <rect
-          x={site.x + site.width - 30}
-          y={site.y + 5}
-          width={22}
-          height={14}
-          rx={4}
-          fill="#020617"
-          fillOpacity={0.7}
-          stroke={color}
-          strokeOpacity={0.75}
-        />
-        <text
-          x={site.x + site.width - 19}
-          y={site.y + 15}
-          textAnchor="middle"
-          fill={color}
-          fontSize={9}
-          fontWeight={700}
-          fontFamily="system-ui, sans-serif"
-        >
-          {orientationLabel}
-        </text>
-        <title>{site.orientation === "portrait" ? "Switch to landscape" : "Switch to portrait"}</title>
-      </g>
       {interactive && (
         <g
           onMouseDown={onResizeMouseDown}
@@ -99,6 +68,49 @@ export function SiteGroup({ site, index, interactive = true, onMouseDown, onTogg
           <title>Resize site</title>
         </g>
       )}
+    </g>
+  );
+}
+
+interface SiteControlsProps {
+  site: SiteCluster;
+  index: number;
+  onToggleOrientation?: (event: MouseEvent<SVGGElement>) => void;
+}
+
+export function SiteControls({ site, index, onToggleOrientation }: SiteControlsProps) {
+  const color = SITE_COLORS[index % SITE_COLORS.length];
+  const orientationLabel = site.orientation === "portrait" ? "L" : "P";
+
+  return (
+    <g
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={onToggleOrientation}
+      style={{ cursor: "pointer" }}
+    >
+      <rect
+        x={site.x + site.width - 30}
+        y={site.y + 5}
+        width={22}
+        height={14}
+        rx={4}
+        fill="#020617"
+        fillOpacity={0.7}
+        stroke={color}
+        strokeOpacity={0.75}
+      />
+      <text
+        x={site.x + site.width - 19}
+        y={site.y + 15}
+        textAnchor="middle"
+        fill={color}
+        fontSize={9}
+        fontWeight={700}
+        fontFamily="system-ui, sans-serif"
+      >
+        {orientationLabel}
+      </text>
+      <title>{site.orientation === "portrait" ? "Switch to landscape" : "Switch to portrait"}</title>
     </g>
   );
 }

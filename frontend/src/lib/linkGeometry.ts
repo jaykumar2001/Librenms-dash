@@ -30,6 +30,23 @@ function anchorToSideCenter(
   return { x: cx, y: cy + Math.sign(dy) * half.halfH };
 }
 
+export function pointToPointPath(
+  ax: number, ay: number,
+  bx: number, by: number,
+): string {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const curvature = Math.min(dist * 0.25, 60);
+  const mx = (ax + bx) / 2;
+  const my = (ay + by) / 2;
+  const nx = -dy / (dist || 1);
+  const ny = dx / (dist || 1);
+  const cx = mx + nx * curvature;
+  const cy = my + ny * curvature;
+  return `M ${ax} ${ay} Q ${cx} ${cy} ${bx} ${by}`;
+}
+
 export function curvedLinkPath(
   sx: number, sy: number,
   tx: number, ty: number,

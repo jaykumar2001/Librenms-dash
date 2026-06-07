@@ -2,14 +2,14 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { MouseEvent, WheelEvent } from "react";
 import type { TopologyResponse, DeviceSummary } from "@librenms-dash/shared";
 import { useForceLayout } from "@/hooks/useForceLayout";
-import { SiteGroup, DeviceGroupBorder } from "./SiteGroup";
+import { SiteGroup, SiteControls, DeviceGroupBorder } from "./SiteGroup";
 import { OverlayLinkLine } from "./OverlayLink";
 import { HoverableLinkPath } from "./HoverableLinkPath";
 import { DeviceNode } from "./DeviceNode";
 import { ArpDeviceNode } from "./ArpDeviceNode";
 import { DevicePopover } from "./DevicePopover";
 import { LinkTooltip, type LinkTooltipData } from "./LinkTooltip";
-import { curvedLinkPath, DEVICE_HALF, ARP_HALF } from "@/lib/linkGeometry";
+import { curvedLinkPath, pointToPointPath, DEVICE_HALF, ARP_HALF } from "@/lib/linkGeometry";
 
 interface Props {
   data: TopologyResponse;
@@ -68,6 +68,11 @@ export function TopologyMap({ data }: Props) {
   const linkDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const linkTooltipHovered = useRef(false);
   const linkHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showAlertTooltip, setShowAlertTooltip] = useState(false);
+  const [alertTooltipPos, setAlertTooltipPos] = useState({ x: 0, y: 0 });
+  const alertHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alertDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const alertTooltipHovered = useRef(false);
 
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
   const isPanning = useRef(false);
@@ -203,6 +208,23 @@ export function TopologyMap({ data }: Props) {
         setHoveredLink(null);
         setHoveredLinkKey(null);
       }
+    }, 150);
+  }, []);
+
+  const handleAlertEnter = useCallback((e: React.MouseEvent) => {
+    if (alertHoverTimer.current) clearTimeout(alertHoverTimer.current);
+    if (alertDismissTimer.current) { clearTimeout(alertDismissTimer.current); alertDismissTimer.current = null; }
+    alertTooltipHovered.current = false;
+    alertHoverTimer.current = setTimeout(() => {
+      setAlertTooltipPos({ x: e.clientX, y: e.clientY });
+      setShowAlertTooltip(true);
+    }, LINK_HOVER_DELAY);
+  }, []);
+
+  const handleAlertLeave = useCallback(() => {
+    if (alertHoverTimer.current) { clearTimeout(alertHoverTimer.current); alertHoverTimer.current = null; }
+    alertDismissTimer.current = setTimeout(() => {
+      if (!alertTooltipHovered.current) setShowAlertTooltip(false);
     }, 150);
   }, []);
 
@@ -421,7 +443,13 @@ export function TopologyMap({ data }: Props) {
           {data.sites.length} sites, {data.sites.reduce((s, site) => s + site.devices.length, 0)} devices
         </span>
         {data.alerts.length > 0 && (
-          <span className="text-red-400 font-semibold">{data.alerts.length} alert{data.alerts.length > 1 ? "s" : ""}</span>
+          <span
+            className="text-red-400 font-semibold cursor-default"
+            onMouseEnter={handleAlertEnter}
+            onMouseLeave={handleAlertLeave}
+          >
+            {data.alerts.length} alert{data.alerts.length > 1 ? "s" : ""}
+          </span>
         )}
         <span className="text-gray-500">Updated {new Date(data.lastUpdated).toLocaleTimeString()}</span>
       </div>
@@ -463,10 +491,6 @@ export function TopologyMap({ data }: Props) {
               interactive={snapToGrid}
               onMouseDown={(e) => beginSiteDrag(site.id, e)}
               onResizeMouseDown={(e) => beginSiteResize(site.id, e)}
-              onToggleOrientation={(e) => {
-                e.stopPropagation();
-                toggleSiteOrientation(site.id);
-              }}
             />
           ))}
 
@@ -552,6 +576,14 @@ export function TopologyMap({ data }: Props) {
           {visibleLinks.map((link) => {
             const key = `ol-${link.overlayType}-${link.source.hostname}-${link.target.hostname}`;
             const linked = highlightedId === link.source.hostname || highlightedId === link.target.hostname;
+            const srcDev = deviceMap.get(link.source.hostname);
+            const tgtDev = deviceMap.get(link.target.hostname);
+            const srcOverlayIp = link.fromIp
+              || srcDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType)?.ip
+              || "";
+            const tgtOverlayIp = link.toIp
+              || tgtDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType)?.ip
+              || "";
             return (
               <OverlayLinkLine
                 key={key}
@@ -568,8 +600,8 @@ export function TopologyMap({ data }: Props) {
                   targetDisplayName: displayName(link.target.hostname),
                   color: link.color,
                   overlayType: link.overlayType,
-                  sourceIp: link.fromIp,
-                  targetIp: link.toIp,
+                  sourceIp: srcOverlayIp,
+                  targetIp: tgtOverlayIp,
                   sourceInterface: link.fromIface,
                   targetInterface: link.toIface,
                 })}
@@ -596,7 +628,10 @@ export function TopologyMap({ data }: Props) {
           {showArpDevices && arpDeviceNodes.map((ad) => {
             const parent = nodeByHostname.get(ad.seenByHostname);
             if (!parent || parent.x == null || parent.y == null) return null;
-            const d = curvedLinkPath(parent.x, parent.y, ad.x, ad.y, DEVICE_HALF, ARP_HALF);
+            const d = pointToPointPath(
+              parent.x, parent.y + DEVICE_HALF.halfH,
+              ad.x, ad.y - ARP_HALF.halfH,
+            );
             const key = `arpdev-link-${ad.mac}`;
             const hovered = hoveredLinkKey === key;
             const linked = highlightedId === ad.seenByHostname || highlightedId === ad.mac;
@@ -695,6 +730,19 @@ export function TopologyMap({ data }: Props) {
             });
           })()}
 
+          {/* Site orientation controls — rendered last so they sit above links */}
+          {sites.map((site, i) => (
+            <SiteControls
+              key={`ctrl-${site.id}`}
+              site={site}
+              index={i}
+              onToggleOrientation={(e) => {
+                e.stopPropagation();
+                toggleSiteOrientation(site.id);
+              }}
+            />
+          ))}
+
         </g>
       </svg>
 
@@ -724,6 +772,56 @@ export function TopologyMap({ data }: Props) {
             setHoveredLinkKey(null);
           }}
         />
+      )}
+
+      {/* Alert tooltip */}
+      {showAlertTooltip && data.alerts.length > 0 && (
+        <div
+          className="fixed z-50 bg-gray-900 border border-red-700 rounded-lg shadow-2xl px-3 py-2.5 text-xs text-gray-200 min-w-[280px] max-w-[400px] max-h-[360px] overflow-y-auto"
+          style={{
+            left: Math.min(alertTooltipPos.x + 16, window.innerWidth - 420),
+            top: Math.max(8, Math.min(alertTooltipPos.y + 8, window.innerHeight - 380)),
+          }}
+          onMouseEnter={() => {
+            alertTooltipHovered.current = true;
+            if (alertDismissTimer.current) { clearTimeout(alertDismissTimer.current); alertDismissTimer.current = null; }
+          }}
+          onMouseLeave={() => {
+            alertTooltipHovered.current = false;
+            setShowAlertTooltip(false);
+          }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-2.5 h-2.5 rounded-full shrink-0 bg-red-500" />
+            <span className="font-bold text-sm text-red-400">
+              Active Alerts ({data.alerts.length})
+            </span>
+          </div>
+          <table className="w-full border-collapse text-xs">
+            <thead>
+              <tr style={{ background: "rgba(255,255,255,0.06)" }}>
+                <th className="py-1 px-2 text-left text-gray-400 font-semibold">Device</th>
+                <th className="py-1 px-2 text-left text-gray-400 font-semibold">Rule</th>
+                <th className="py-1 px-2 text-left text-gray-400 font-semibold">Severity</th>
+                <th className="py-1 px-2 text-right text-gray-400 font-semibold">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.alerts.map((a, i) => (
+                <tr key={a.id} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
+                  <td className="py-1 px-2 text-gray-200 whitespace-nowrap">
+                    {displayName(a.hostname)}
+                  </td>
+                  <td className="py-1 px-2 text-red-300 break-words max-w-[180px]">{a.rule}</td>
+                  <td className="py-1 px-2 text-gray-300 whitespace-nowrap capitalize">{a.severity}</td>
+                  <td className="py-1 px-2 text-gray-400 whitespace-nowrap text-right font-mono">
+                    {a.timestamp ? new Date(a.timestamp.replace(" ", "T")).toLocaleString() : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );

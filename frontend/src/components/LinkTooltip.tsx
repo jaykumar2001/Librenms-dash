@@ -83,6 +83,7 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
               device={data.sourceDisplayName}
               iface={data.sourceInterface}
               ip={data.sourceIp}
+              ipLabel={data.type === "overlay" ? "Overlay IP" : "IP"}
               mac={data.type === "arp" ? data.mac : undefined}
             />
             <DeviceSection
@@ -90,6 +91,7 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
               device={data.targetDisplayName}
               iface={data.targetInterface}
               ip={data.targetIp}
+              ipLabel={data.type === "overlay" ? "Overlay IP" : "IP"}
             />
           </tbody>
         </table>
@@ -98,11 +100,12 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
   );
 }
 
-function DeviceSection({ role, device, iface, ip, mac }: {
+function DeviceSection({ role, device, iface, ip, ipLabel = "IP", mac }: {
   role: string;
   device: string;
   iface?: string;
   ip?: string;
+  ipLabel?: string;
   mac?: string;
 }) {
   return (
@@ -110,7 +113,7 @@ function DeviceSection({ role, device, iface, ip, mac }: {
       <SectionLabel label={role} />
       <Row label="Device" value={device} />
       {iface && <Row label="Interface" value={iface} mono />}
-      {ip && <Row label="IP" value={ip} mono />}
+      {ip && <Row label={ipLabel} value={ip} mono />}
       {mac && <Row label="MAC" value={mac} mono />}
     </>
   );

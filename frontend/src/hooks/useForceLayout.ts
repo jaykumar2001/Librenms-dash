@@ -109,7 +109,9 @@ interface GroupLayout {
 function layoutGroup(devices: DeviceSummary[], orientation: SiteOrientation): GroupLayout {
   const os = devices[0]?.os ?? "unknown";
   const n = devices.length;
-  const cols = orientation === "portrait" ? 1 : groupCols(n);
+  const landscapeCols = groupCols(n);
+  const landscapeRows = Math.ceil(n / landscapeCols);
+  const cols = orientation === "portrait" ? landscapeRows : landscapeCols;
   const rows = Math.ceil(n / cols);
   const w = GROUP_PAD * 2 + cols * NODE_W + Math.max(0, cols - 1) * NODE_GAP_X;
   const h = GROUP_LABEL_H + GROUP_PAD * 2 + rows * NODE_H + Math.max(0, rows - 1) * NODE_GAP_Y;
@@ -130,11 +132,8 @@ function layoutSite(
   // Sort groups: largest first
   const sorted = [...groups].sort((a, b) => b.devices.length - a.devices.length);
 
-  // Calculate a reasonable max width (widest group * 2 + padding, or just wide enough)
   const maxGroupW = Math.max(...sorted.map((g) => g.w));
-  const targetW = orientation === "portrait"
-    ? maxGroupW + SITE_PAD * 2
-    : Math.max(maxGroupW * 2 + GROUP_GAP + SITE_PAD * 2, 400);
+  const targetW = Math.max(maxGroupW * 2 + GROUP_GAP + SITE_PAD * 2, 400);
 
   for (const group of sorted) {
     if (curX + group.w + SITE_PAD > targetW && curX > SITE_PAD) {
@@ -445,7 +444,11 @@ function reflowSiteContents(
     if (groupNodes.length === 0) continue;
 
     const maxCols = Math.max(1, Math.floor((maxContentW - GROUP_PAD * 2 + NODE_GAP_X) / (NODE_W + NODE_GAP_X)));
-    const cols = site.orientation === "portrait" ? 1 : Math.min(groupNodes.length, maxCols);
+    const lCols = groupCols(groupNodes.length);
+    const lRows = Math.ceil(groupNodes.length / lCols);
+    const cols = site.orientation === "portrait"
+      ? Math.min(lRows, maxCols)
+      : Math.min(groupNodes.length, maxCols);
     const rows = Math.ceil(groupNodes.length / cols);
     const baseW = GROUP_PAD * 2 + cols * NODE_W;
     const availableGapX = maxContentW - baseW;
