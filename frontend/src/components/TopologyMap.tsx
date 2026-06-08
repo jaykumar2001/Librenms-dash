@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
-import type { MouseEvent, WheelEvent } from "react";
+import type { MouseEvent } from "react";
 import type { TopologyResponse, DeviceSummary } from "@librenms-dash/shared";
 import { useForceLayout } from "@/hooks/useForceLayout";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
@@ -54,6 +54,7 @@ function snapToNearby(value: number, candidates: number[]): number | null {
 
 export function TopologyMap({ data }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
   // Vertical space the floating top bars occupy, so the layout never places
   // content under them. Measured at runtime since the bars wrap (and grow
@@ -70,6 +71,8 @@ export function TopologyMap({ data }: Props) {
   const [infoDevice, setInfoDevice] = useState<{ hostname: string; icon: string } | null>(null);
   const [hoveredLink, setHoveredLink] = useState<LinkTooltipData | null>(null);
   const [hoveredLinkKey, setHoveredLinkKey] = useState<string | null>(null);
+  // A discovered-device tooltip pinned open by a click (stays until dismissed).
+  const [pinnedLink, setPinnedLink] = useState<LinkTooltipData | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   // ── Persistent filter / toggle state ────────────────────────────────────────
   const [hiddenOverlays, setHiddenOverlays] = useLocalStorage<Record<string, boolean>>(
@@ -81,9 +84,6 @@ export function TopologyMap({ data }: Props) {
   const [showArpDevices, setShowArpDevices] = useLocalStorage("librenms-dash:showArpDevices:v1", false);
   const [snapToGrid, setSnapToGrid] = useLocalStorage("librenms-dash:snapToGrid:v1", false);
   // ── Ephemeral UI state (not persisted) ──────────────────────────────────────
-  const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const popoverHovered = useRef(false);
-  const deviceHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const linkDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const linkTooltipHovered = useRef(false);
   const linkHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -105,6 +105,16 @@ export function TopologyMap({ data }: Props) {
 
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
+  // True once a pan/drag actually moved, so the trailing click is ignored (a drag
+  // that starts on a box must not also open that box's detail).
+  const didPan = useRef(false);
+  // The node whose detail box is currently pinned open (device hostname or ARP
+  // mac), so hovering elsewhere reverts the highlight back to it on mouse-leave.
+  const pinnedId = useRef<string | null>(null);
+  // Touch-gesture state: last single-finger position (pan) and last 2-finger
+  // distance (pinch). Only one is active at a time.
+  const touchPan = useRef<{ x: number; y: number } | null>(null);
+  const pinchDist = useRef<number | null>(null);
   const dragTarget = useRef<{
     type: "site" | "device" | "site-resize";
     id: string;
@@ -277,34 +287,50 @@ export function TopologyMap({ data }: Props) {
     return snapToNearby(value, candidates) ?? snapValue(value);
   }, [snapToGrid]);
 
-  const handleDeviceHover = useCallback((hostname: string | null, x: number, y: number) => {
-    if (dismissTimer.current) { clearTimeout(dismissTimer.current); dismissTimer.current = null; }
-    if (hostname) {
-      if (deviceHoverTimer.current) clearTimeout(deviceHoverTimer.current);
-      popoverHovered.current = false;
-      setHighlightedId(hostname);
-      // On touch devices a tap fires synthetic hover; the full popover would
-      // cover the highlighted links, so only highlight and skip the popover.
-      // Details are reachable via the bottom sheet (see infoDevice / the chip).
-      if (canHover) {
-        deviceHoverTimer.current = setTimeout(() => {
-          const dev = deviceMap.get(hostname);
-          setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
-        }, LINK_HOVER_DELAY);
-      } else {
-        // Keep an already-open bottom sheet in sync with the newly tapped device.
-        setInfoDevice((prev) => (prev ? { hostname, icon: deviceMap.get(hostname)?.icon ?? "generic.svg" } : prev));
-      }
-    } else {
-      if (deviceHoverTimer.current) { clearTimeout(deviceHoverTimer.current); deviceHoverTimer.current = null; }
-      dismissTimer.current = setTimeout(() => {
-        if (!popoverHovered.current) {
-          setHoveredDevice(null);
-          setHighlightedId(null);
-        }
-      }, 150);
-    }
-  }, [deviceMap, canHover]);
+  // Hovering only highlights a device's connected links now; the detail box is
+  // opened by a click (see handleDeviceClick). On mouse-leave the highlight
+  // reverts to whatever box is pinned open, if any.
+  const handleDeviceHover = useCallback((hostname: string | null) => {
+    setHighlightedId(hostname ?? pinnedId.current);
+  }, []);
+
+  // Dismiss any open detail box (managed-device popover or pinned discovered tooltip).
+  const closeInfo = useCallback(() => {
+    pinnedId.current = null;
+    setHoveredDevice(null);
+    setInfoDevice(null);
+    setPinnedLink(null);
+    setHighlightedId(null);
+  }, []);
+
+  // Click a managed device → open its detail box (floating popover on desktop,
+  // bottom sheet on touch). Clicking the already-open device closes it (toggle).
+  const handleDeviceClick = useCallback((hostname: string, e: MouseEvent<SVGGElement>) => {
+    e.stopPropagation();
+    if (didPan.current) return;
+    const isOpen = canHover ? hoveredDevice?.hostname === hostname : infoDevice?.hostname === hostname;
+    if (isOpen) { closeInfo(); return; }
+    setPinnedLink(null); // never show a device popover and a pinned tooltip at once
+    const icon = deviceMap.get(hostname)?.icon ?? "generic.svg";
+    pinnedId.current = hostname;
+    setHighlightedId(hostname);
+    if (canHover) setHoveredDevice({ hostname, x: e.clientX, y: e.clientY, icon });
+    else setInfoDevice({ hostname, icon });
+  }, [canHover, hoveredDevice, infoDevice, deviceMap, closeInfo]);
+
+  // Click a discovered (ARP) box → pin its info tooltip open (toggle).
+  const handleArpClick = useCallback((mac: string, tooltipData: LinkTooltipData, e: MouseEvent) => {
+    e.stopPropagation();
+    if (didPan.current) return;
+    if (linkHoverTimer.current) { clearTimeout(linkHoverTimer.current); linkHoverTimer.current = null; }
+    if (linkDismissTimer.current) { clearTimeout(linkDismissTimer.current); linkDismissTimer.current = null; }
+    const isOpen = pinnedLink?.targetHostname === mac;
+    setHoveredDevice(null);
+    setInfoDevice(null);
+    pinnedId.current = isOpen ? null : mac;
+    setHighlightedId(isOpen ? null : mac);
+    setPinnedLink(isOpen ? null : tooltipData);
+  }, [pinnedLink]);
 
   // --- Link hover handlers ---
   const showLinkTooltip = useCallback((key: string, tooltipData: LinkTooltipData) => {
@@ -345,17 +371,93 @@ export function TopologyMap({ data }: Props) {
     }, 150);
   }, []);
 
-  const handleWheel = useCallback((e: WheelEvent) => {
-    e.preventDefault();
-    const factor = e.deltaY > 0 ? 0.95 : 1.05;
-    setTransform((prev) => {
-      const s = Math.min(Math.max(prev.scale * factor, 0.2), 3);
-      const rect = containerRef.current?.getBoundingClientRect();
-      if (!rect) return { ...prev, scale: s };
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      return { scale: s, x: mx - (mx - prev.x) * (s / prev.scale), y: my - (my - prev.y) * (s / prev.scale) };
-    });
+  // Wheel + touch gestures. Attached as native, non-passive listeners (React's
+  // synthetic onWheel/onTouch are passive, so preventDefault would be ignored)
+  // so we can suppress the browser's own page scroll/zoom.
+  //   • Ctrl+wheel / trackpad pinch  → zoom anchored at the cursor
+  //   • plain wheel / 2-finger scroll → pan (both axes)
+  //   • 1-finger touch drag           → pan
+  //   • 2-finger touch pinch          → zoom anchored at the gesture midpoint
+  useEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const clamp = (s: number) => Math.min(Math.max(s, 0.2), 3);
+    // Zoom by `factor` while keeping the point (px,py) — in container-relative
+    // coordinates — fixed on screen.
+    const zoomAt = (factor: number, px: number, py: number) =>
+      setTransform((prev) => {
+        const s = clamp(prev.scale * factor);
+        const k = s / prev.scale;
+        return { scale: s, x: px - (px - prev.x) * k, y: py - (py - prev.y) * k };
+      });
+
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      if (e.ctrlKey) {
+        // Trackpad pinch and Ctrl+wheel both arrive here; deltaY is the pinch amount.
+        zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - rect.left, e.clientY - rect.top);
+      } else {
+        setTransform((prev) => ({ ...prev, x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
+      }
+    };
+
+    const dist = (t: TouchList) =>
+      Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+
+    const onTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 2) {
+        pinchDist.current = dist(e.touches);
+        touchPan.current = null;
+      } else if (e.touches.length === 1) {
+        touchPan.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        pinchDist.current = null;
+      }
+    };
+
+    const onTouchMove = (e: TouchEvent) => {
+      const rect = el.getBoundingClientRect();
+      if (e.touches.length === 2 && pinchDist.current != null) {
+        e.preventDefault();
+        const d = dist(e.touches);
+        const ratio = d / pinchDist.current;
+        pinchDist.current = d;
+        const mx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - rect.left;
+        const my = (e.touches[0].clientY + e.touches[1].clientY) / 2 - rect.top;
+        zoomAt(ratio, mx, my);
+      } else if (e.touches.length === 1 && touchPan.current) {
+        e.preventDefault();
+        const t = e.touches[0];
+        const dx = t.clientX - touchPan.current.x;
+        const dy = t.clientY - touchPan.current.y;
+        touchPan.current = { x: t.clientX, y: t.clientY };
+        setTransform((prev) => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+      }
+    };
+
+    const onTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        // A finger lifted after a pinch — hand off to single-finger panning.
+        pinchDist.current = null;
+        touchPan.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 0) {
+        pinchDist.current = null;
+        touchPan.current = null;
+      }
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    el.addEventListener("touchstart", onTouchStart, { passive: false });
+    el.addEventListener("touchmove", onTouchMove, { passive: false });
+    el.addEventListener("touchend", onTouchEnd);
+    el.addEventListener("touchcancel", onTouchEnd);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      el.removeEventListener("touchcancel", onTouchEnd);
+    };
   }, []);
 
   const beginSiteDrag = useCallback((siteId: string, e: MouseEvent<SVGGElement>) => {
@@ -374,6 +476,7 @@ export function TopologyMap({ data }: Props) {
       currentX: site.x,
       currentY: site.y,
     };
+    didPan.current = false;
     isPanning.current = false;
     setHoveredDevice(null);
   }, [sites, snapToGrid]);
@@ -394,6 +497,7 @@ export function TopologyMap({ data }: Props) {
       currentX: node.x,
       currentY: node.y,
     };
+    didPan.current = false;
     isPanning.current = false;
     setHoveredDevice(null);
   }, [nodes, snapToGrid]);
@@ -416,6 +520,7 @@ export function TopologyMap({ data }: Props) {
       startWidth: site.width,
       startHeight: site.height,
     };
+    didPan.current = false;
     isPanning.current = false;
     setHoveredDevice(null);
   }, [sites, snapToGrid]);
@@ -423,6 +528,7 @@ export function TopologyMap({ data }: Props) {
   const handleMouseDown = useCallback((e: MouseEvent) => {
     // Box move/resize handlers stopPropagation, so if a mousedown reaches the SVG
     // it's either empty canvas or a box while editing is disabled — pan in both cases.
+    didPan.current = false;
     isPanning.current = true;
     panStart.current = { x: e.clientX - transform.x, y: e.clientY - transform.y };
   }, [transform]);
@@ -438,6 +544,7 @@ export function TopologyMap({ data }: Props) {
         const nextRight = resolveSnap(rawRight, candidates.x);
         const nextBottom = resolveSnap(rawBottom, candidates.y);
         if (nextRight === target.currentX && nextBottom === target.currentY) return;
+        didPan.current = true;
         dragTarget.current = { ...target, currentX: nextRight, currentY: nextBottom };
         resizeSite(target.id, nextRight - target.startX, nextBottom - target.startY);
         return;
@@ -450,6 +557,7 @@ export function TopologyMap({ data }: Props) {
       const dx = nextX - target.currentX;
       const dy = nextY - target.currentY;
       if (dx === 0 && dy === 0) return;
+      didPan.current = true;
       dragTarget.current = { ...target, currentX: nextX, currentY: nextY };
       if (target.type === "site") {
         moveSite(target.id, dx, dy);
@@ -460,6 +568,7 @@ export function TopologyMap({ data }: Props) {
     }
 
     if (!isPanning.current) return;
+    didPan.current = true;
     setTransform((prev) => ({
       ...prev,
       x: e.clientX - panStart.current.x,
@@ -471,6 +580,20 @@ export function TopologyMap({ data }: Props) {
     isPanning.current = false;
     dragTarget.current = null;
   }, []);
+
+  // A click on empty canvas (devices/boxes stopPropagation) dismisses any open
+  // detail box; a real drag-pan sets didPan so the trailing click is ignored.
+  const handleCanvasClick = useCallback(() => {
+    if (didPan.current) return;
+    closeInfo();
+  }, [closeInfo]);
+
+  // Escape also dismisses the open detail box.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") closeInfo(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [closeInfo]);
 
   const toggleOverlay = useCallback((type: string) => {
     setHiddenOverlays((prev) => ({ ...prev, [type]: !prev[type] }));
@@ -609,14 +732,15 @@ export function TopologyMap({ data }: Props) {
 
       {/* SVG */}
       <svg
+        ref={svgRef}
         width={dimensions.width}
         height={dimensions.height}
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        style={{ cursor: dragTarget.current ? "move" : isPanning.current ? "grabbing" : "grab" }}
+        onClick={handleCanvasClick}
+        style={{ cursor: dragTarget.current ? "move" : isPanning.current ? "grabbing" : "grab", touchAction: "none" }}
       >
         <defs>
           <pattern id="topology-grid" width={GRID_SIZE} height={GRID_SIZE} patternUnits="userSpaceOnUse">
@@ -780,6 +904,7 @@ export function TopologyMap({ data }: Props) {
               highlighted={highlightedId === node.hostname}
               onHover={handleDeviceHover}
               onMouseDown={(e) => beginDeviceDrag(node.hostname, e)}
+              onClick={(e) => handleDeviceClick(node.hostname, e)}
             />
           ))}
 
@@ -839,29 +964,30 @@ export function TopologyMap({ data }: Props) {
 
           {/* ARP Discovered Devices */}
           {showArpDevices && arpDeviceNodes.map((ad) => {
-            const key = `arpdev-${ad.mac}`;
             const parentDev = deviceMap.get(ad.seenByHostname);
+            const tooltip = (e: { clientX: number; clientY: number }): LinkTooltipData => ({
+              type: "arp-device",
+              screenX: e.clientX,
+              screenY: e.clientY,
+              sourceHostname: ad.seenByHostname,
+              targetHostname: ad.mac,
+              sourceDisplayName: displayName(ad.seenByHostname),
+              targetDisplayName: ad.vendor || "Unknown device",
+              color: ARP_COLOR,
+              sourceIp: parentDev?.ips?.[0] ?? parentDev?.lanIp ?? parentDev?.ip ?? "",
+              targetIp: ad.ips.join(", "),
+              mac: formatMac(ad.mac),
+              interface: ad.seenByInterface,
+              vendor: ad.vendor,
+            });
             return (
               <ArpDeviceNode
                 key={ad.mac}
                 node={ad}
                 highlighted={highlightedId === ad.mac || highlightedId === ad.seenByHostname}
-                onMouseEnter={(e) => { setHighlightedId(ad.mac); showLinkTooltip(key, {
-                  type: "arp-device",
-                  screenX: e.clientX,
-                  screenY: e.clientY,
-                  sourceHostname: ad.seenByHostname,
-                  targetHostname: ad.mac,
-                  sourceDisplayName: displayName(ad.seenByHostname),
-                  targetDisplayName: ad.vendor || "Unknown device",
-                  color: ARP_COLOR,
-                  sourceIp: parentDev?.ips?.[0] ?? parentDev?.lanIp ?? parentDev?.ip ?? "",
-                  targetIp: ad.ips.join(", "),
-                  mac: formatMac(ad.mac),
-                  interface: ad.seenByInterface,
-                  vendor: ad.vendor,
-                }); }}
-                onMouseLeave={() => { setHighlightedId(null); hideLinkTooltip(); }}
+                onMouseEnter={() => setHighlightedId(ad.mac)}
+                onMouseLeave={() => setHighlightedId(pinnedId.current)}
+                onClick={(e) => handleArpClick(ad.mac, tooltip(e), e)}
               />
             );
           })}
@@ -908,15 +1034,18 @@ export function TopologyMap({ data }: Props) {
         </g>
       </svg>
 
-      {/* Device popover */}
+      {/* Device popover — click-pinned: stays open until you click the device
+          again, click empty canvas, or press Escape (so moving the mouse onto it
+          to read/scroll doesn't dismiss it). */}
       {hoveredDevice && (
         <DevicePopover
           hostname={hoveredDevice.hostname}
           icon={hoveredDevice.icon}
           screenX={hoveredDevice.x}
           screenY={hoveredDevice.y}
-          onMouseEnter={() => { popoverHovered.current = true; if (dismissTimer.current) { clearTimeout(dismissTimer.current); dismissTimer.current = null; } }}
-          onMouseLeave={() => { popoverHovered.current = false; setHoveredDevice(null); }}
+          onMouseEnter={() => {}}
+          onMouseLeave={() => {}}
+          onClose={closeInfo}
         />
       )}
 
@@ -946,15 +1075,17 @@ export function TopologyMap({ data }: Props) {
         />
       )}
 
-      {/* Link tooltip */}
-      {hoveredLink && (
+      {/* Link tooltip. A pinned discovered-device tooltip (set by clicking the box)
+          takes priority and ignores hover-leave; dismiss it via canvas click or
+          Escape. Otherwise it's the transient hover tooltip for links. */}
+      {(pinnedLink ?? hoveredLink) && (
         <LinkTooltip
-          data={hoveredLink}
-          onMouseEnter={() => {
+          data={pinnedLink ?? hoveredLink!}
+          onMouseEnter={pinnedLink ? () => {} : () => {
             linkTooltipHovered.current = true;
             if (linkDismissTimer.current) { clearTimeout(linkDismissTimer.current); linkDismissTimer.current = null; }
           }}
-          onMouseLeave={() => {
+          onMouseLeave={pinnedLink ? () => {} : () => {
             linkTooltipHovered.current = false;
             setHoveredLink(null);
             setHoveredLinkKey(null);

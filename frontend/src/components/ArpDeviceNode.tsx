@@ -6,12 +6,13 @@ interface Props {
   highlighted?: boolean;
   onMouseEnter?: (e: React.MouseEvent) => void;
   onMouseLeave?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
 }
 
 const BOX_W = 132;
 const BOX_H = 42;
 
-export function ArpDeviceNode({ node, highlighted, onMouseEnter, onMouseLeave }: Props) {
+export function ArpDeviceNode({ node, highlighted, onMouseEnter, onMouseLeave, onClick }: Props) {
   const [isHovered, setIsHovered] = useState(false);
   const x = node.x - BOX_W / 2;
   const y = node.y - BOX_H / 2;
@@ -36,6 +37,8 @@ export function ArpDeviceNode({ node, highlighted, onMouseEnter, onMouseLeave }:
     <g
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
+      onClick={onClick}
+      style={{ cursor: "pointer" }}
     >
       <rect
         x={x}
