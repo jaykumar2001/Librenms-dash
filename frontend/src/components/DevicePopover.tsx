@@ -10,8 +10,12 @@ interface Props {
   icon: string;
   screenX: number;
   screenY: number;
+  // When true, render anchored to the bottom of the screen (mobile bottom sheet)
+  // instead of floating next to the cursor, so it never covers the canvas above.
+  bottomSheet?: boolean;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
+  onClose?: () => void;
 }
 
 function formatUptime(seconds: number): string {
@@ -48,19 +52,34 @@ class PopoverErrorBoundary extends Component<{ children: ReactNode }, { hasError
   }
 }
 
-function DevicePopoverInner({ hostname, icon, screenX, screenY, onMouseEnter, onMouseLeave }: Props) {
+function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onMouseEnter, onMouseLeave, onClose }: Props) {
   const { data, isLoading } = useDeviceDetail(hostname);
 
-  const left = Math.min(screenX + 20, window.innerWidth - 440);
+  // Clamp width to the viewport so the box never exceeds the screen on mobile.
+  const width = Math.min(420, window.innerWidth - 16);
+  const left = Math.max(8, Math.min(screenX + 20, window.innerWidth - width - 8));
   const top = Math.max(8, Math.min(screenY - 20, window.innerHeight - 520));
 
   return (
     <div
-      className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl p-4 text-sm text-gray-200 w-[420px] max-h-[500px] overflow-y-auto"
-      style={{ left, top }}
+      className={
+        bottomSheet
+          ? "fixed z-50 inset-x-0 bottom-0 bg-gray-900 border-t border-gray-600 rounded-t-xl shadow-2xl p-4 pt-3 text-sm text-gray-200 max-h-[55vh] overflow-y-auto"
+          : "fixed z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl p-4 text-sm text-gray-200 max-h-[500px] overflow-y-auto"
+      }
+      style={bottomSheet ? undefined : { left, top, width }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
+      {bottomSheet && (
+        <button
+          onClick={onClose}
+          aria-label="Close"
+          className="absolute top-2 right-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-gray-800 text-gray-400 hover:text-white text-xl leading-none"
+        >
+          ×
+        </button>
+      )}
       {isLoading ? (
         <div className="text-gray-400 py-4 text-center">Loading...</div>
       ) : !data ? (
