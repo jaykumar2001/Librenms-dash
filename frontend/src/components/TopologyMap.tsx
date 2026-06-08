@@ -61,6 +61,8 @@ export function TopologyMap({ data }: Props) {
   );
   const [dimensions, setDimensions] = useState({ width: 1200, height: 800 });
   const [hoveredDevice, setHoveredDevice] = useState<{ hostname: string; x: number; y: number; icon: string } | null>(null);
+  // Device shown in the mobile bottom sheet (touch devices only).
+  const [infoDevice, setInfoDevice] = useState<{ hostname: string; icon: string } | null>(null);
   const [hoveredLink, setHoveredLink] = useState<LinkTooltipData | null>(null);
   const [hoveredLinkKey, setHoveredLinkKey] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
@@ -260,11 +262,15 @@ export function TopologyMap({ data }: Props) {
       setHighlightedId(hostname);
       // On touch devices a tap fires synthetic hover; the full popover would
       // cover the highlighted links, so only highlight and skip the popover.
+      // Details are reachable via the bottom sheet (see infoDevice / the chip).
       if (canHover) {
         deviceHoverTimer.current = setTimeout(() => {
           const dev = deviceMap.get(hostname);
           setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
         }, LINK_HOVER_DELAY);
+      } else {
+        // Keep an already-open bottom sheet in sync with the newly tapped device.
+        setInfoDevice((prev) => (prev ? { hostname, icon: deviceMap.get(hostname)?.icon ?? "generic.svg" } : prev));
       }
     } else {
       if (deviceHoverTimer.current) { clearTimeout(deviceHoverTimer.current); deviceHoverTimer.current = null; }
@@ -857,6 +863,32 @@ export function TopologyMap({ data }: Props) {
           screenY={hoveredDevice.y}
           onMouseEnter={() => { popoverHovered.current = true; if (dismissTimer.current) { clearTimeout(dismissTimer.current); dismissTimer.current = null; } }}
           onMouseLeave={() => { popoverHovered.current = false; setHoveredDevice(null); }}
+        />
+      )}
+
+      {/* Touch: "View details" chip — appears when a device is tapped/highlighted
+          and the bottom sheet isn't already open. Tapping it opens the sheet. */}
+      {!canHover && !infoDevice && highlightedId && deviceMap.has(highlightedId) && (
+        <button
+          onClick={() => setInfoDevice({ hostname: highlightedId, icon: deviceMap.get(highlightedId)?.icon ?? "generic.svg" })}
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-sky-600 text-white text-sm font-semibold rounded-full shadow-lg px-4 py-2.5"
+        >
+          <span className="w-4 h-4 flex items-center justify-center rounded-full border border-white text-xs">i</span>
+          View {displayName(highlightedId)} details
+        </button>
+      )}
+
+      {/* Touch: device details as a bottom sheet that leaves the canvas visible. */}
+      {!canHover && infoDevice && (
+        <DevicePopover
+          hostname={infoDevice.hostname}
+          icon={infoDevice.icon}
+          screenX={0}
+          screenY={0}
+          bottomSheet
+          onMouseEnter={() => {}}
+          onMouseLeave={() => {}}
+          onClose={() => setInfoDevice(null)}
         />
       )}
 
