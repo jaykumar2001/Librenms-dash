@@ -9,8 +9,9 @@ interface Props {
   device?: DeviceSummary;
   interactive?: boolean;
   highlighted?: boolean;
-  onHover: (hostname: string | null, x: number, y: number) => void;
+  onHover: (hostname: string | null) => void;
   onMouseDown?: (event: MouseEvent<SVGGElement>) => void;
+  onClick?: (event: MouseEvent<SVGGElement>) => void;
 }
 
 const BOX_W = 140;
@@ -29,19 +30,19 @@ const OVERLAY_LABELS: Record<string, string> = {
   tailscale: "TS",
 };
 
-export function DeviceNode({ node, device, interactive = true, highlighted, onHover, onMouseDown }: Props) {
+export function DeviceNode({ node, device, interactive = true, highlighted, onHover, onMouseDown, onClick }: Props) {
   const [isHovered, setIsHovered] = useState(false);
   const x = (node.x ?? 0) - BOX_W / 2;
   const y = (node.y ?? 0) - BOX_H / 2;
 
-  const handleEnter = useCallback((e: React.MouseEvent) => {
+  const handleEnter = useCallback(() => {
     setIsHovered(true);
-    onHover(node.hostname, e.clientX, e.clientY);
+    onHover(node.hostname);
   }, [node.hostname, onHover]);
 
   const handleLeave = useCallback(() => {
     setIsHovered(false);
-    onHover(null, 0, 0);
+    onHover(null);
   }, [onHover]);
 
   const statusColor = node.status === 1 ? "#22c55e" : "#ef4444";
@@ -52,9 +53,10 @@ export function DeviceNode({ node, device, interactive = true, highlighted, onHo
   return (
     <g
       onMouseDown={onMouseDown}
+      onClick={onClick}
       onMouseEnter={handleEnter}
       onMouseLeave={handleLeave}
-      style={{ cursor: interactive ? "move" : "grab" }}
+      style={{ cursor: interactive ? "move" : "pointer" }}
     >
       <rect
         x={x}

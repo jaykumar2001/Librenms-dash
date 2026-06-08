@@ -71,7 +71,7 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
-      {bottomSheet && (
+      {onClose && (
         <button
           onClick={onClose}
           aria-label="Close"
