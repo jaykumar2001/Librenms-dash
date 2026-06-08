@@ -3,7 +3,7 @@ import type { MouseEvent, WheelEvent } from "react";
 import type { TopologyResponse, DeviceSummary } from "@librenms-dash/shared";
 import { useForceLayout } from "@/hooks/useForceLayout";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
-import { useTransformPersistence, readPersistedTransform } from "@/hooks/usePersistedLayout";
+import { useTransformPersistence, readPersistedTransform, clearPersistedTransform } from "@/hooks/usePersistedLayout";
 import { SiteGroup, SiteControls, DeviceGroupBorder } from "./SiteGroup";
 import { OverlayLinkLine } from "./OverlayLink";
 import { HoverableLinkPath } from "./HoverableLinkPath";
@@ -54,6 +54,11 @@ function snapToNearby(value: number, candidates: number[]): number | null {
 
 export function TopologyMap({ data }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const topBarRef = useRef<HTMLDivElement>(null);
+  // Vertical space the floating top bars occupy, so the layout never places
+  // content under them. Measured at runtime since the bars wrap (and grow
+  // taller) on narrow screens.
+  const [topInset, setTopInset] = useState(56);
   // True on devices with a real hover pointer (desktop); false on touch screens.
   const canHover = useMemo(
     () => typeof window === "undefined" || !window.matchMedia ? true : window.matchMedia("(hover: hover)").matches,
@@ -89,8 +94,12 @@ export function TopologyMap({ data }: Props) {
   const alertTooltipHovered = useRef(false);
 
   // Seed viewport transform from localStorage on first render, then persist changes.
-  const [transform, setTransform] = useState(() => readPersistedTransform() ?? { x: 0, y: 0, scale: 1 });
+  const restoredTransformRef = useRef(readPersistedTransform());
+  const [transform, setTransform] = useState(() => restoredTransformRef.current ?? { x: 0, y: 0, scale: 1 });
   const lastInitialScaleRef = useRef(1);
+  // When a transform was restored from localStorage, don't let auto-fit override
+  // it — so a refresh preserves the saved zoom/pan. Cleared on Reset Layout.
+  const suppressAutoFit = useRef(restoredTransformRef.current != null);
   // Debounce-write the transform so pan/zoom doesn't hammer localStorage on every frame.
   useTransformPersistence(transform);
 
@@ -120,6 +129,19 @@ export function TopologyMap({ data }: Props) {
     return () => ro.disconnect();
   }, []);
 
+  // Track the top bars' height (they wrap on small screens) and reserve that
+  // much space at the top of the layout, plus a small gap.
+  useEffect(() => {
+    const el = topBarRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      // offsetHeight includes the wrapper padding, so this is the full footprint.
+      setTopInset((el.offsetHeight || 56) + 8);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   const {
     nodes,
     links,
@@ -134,13 +156,14 @@ export function TopologyMap({ data }: Props) {
     moveDevice,
     resizeSite,
     toggleSiteOrientation,
-  } = useForceLayout(data, dimensions.width, dimensions.height, showArpDevices);
+  } = useForceLayout(data, dimensions.width, dimensions.height, showArpDevices, topInset);
 
   // When the layout regenerates (new topology, orientation change, reset), snap
   // the SVG transform back to the computed fit-scale so nothing overflows.
   useEffect(() => {
     if (initialScale === lastInitialScaleRef.current) return;
     lastInitialScaleRef.current = initialScale;
+    if (suppressAutoFit.current) return;
     setTransform({ x: 0, y: 0, scale: initialScale });
   }, [initialScale]);
 
@@ -453,13 +476,43 @@ export function TopologyMap({ data }: Props) {
     setHiddenOverlays((prev) => ({ ...prev, [type]: !prev[type] }));
   }, []);
 
+  const handleReset = useCallback(() => {
+    // Reset Layout should also discard a saved zoom/pan and snap back to fit.
+    suppressAutoFit.current = false;
+    clearPersistedTransform();
+    resetLayout();
+    setTransform({ x: 0, y: 0, scale: initialScale });
+  }, [resetLayout, initialScale]);
+
+  // Per-location counts shown in each site header. Neighbor/ARP links are always
+  // computed (independent of the visibility toggles); discovered devices come
+  // straight from the source data so the count shows even when the layer is off.
+  const siteStats = useMemo(() => {
+    const map = new Map<string, { lldp: number; arp: number; discovered: number }>();
+    const bucket = (id: string) => {
+      let s = map.get(id);
+      if (!s) { s = { lldp: 0, arp: 0, discovered: 0 }; map.set(id, s); }
+      return s;
+    };
+    // Seed every site so the header shows counts (including zeros) for all locations.
+    for (const site of data.sites) bucket(site.id);
+    for (const nl of neighborLinks) {
+      for (const id of new Set([nl.source.siteId, nl.target.siteId])) bucket(id).lldp++;
+    }
+    for (const al of arpLinks) {
+      for (const id of new Set([al.source.siteId, al.target.siteId])) bucket(id).arp++;
+    }
+    for (const ad of (data.arpDevices ?? [])) bucket(ad.siteId).discovered++;
+    return map;
+  }, [neighborLinks, arpLinks, data.arpDevices, data.sites]);
+
   return (
     <div ref={containerRef} className="w-full h-full relative">
       {/* Top floating bars — single flex row keeps left/right bars equal-height
           (items-stretch) and never overlapping (justify-between; outer flex-wrap
           drops the right bar below the left on very narrow screens). The wrapper
           is pointer-transparent so panning still works in the gap between bars. */}
-      <div className="absolute top-0 inset-x-0 z-10 p-4 flex flex-wrap items-stretch justify-between gap-3 pointer-events-none">
+      <div ref={topBarRef} className="absolute top-0 inset-x-0 z-10 p-4 flex flex-wrap items-stretch justify-between gap-3 pointer-events-none">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 pointer-events-auto">
         <button
@@ -492,21 +545,6 @@ export function TopologyMap({ data }: Props) {
           />
           Discovered ({data.arpDevices?.length ?? 0})
         </button>
-        <button
-          onClick={() => setSnapToGrid((v) => !v)}
-          title="Enable to move and resize boxes (with grid snapping)"
-          className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
-            snapToGrid ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-500"
-          }`}
-        >
-          <span className="grid grid-cols-2 gap-0.5">
-            <span className="w-1 h-1 rounded-sm bg-current" />
-            <span className="w-1 h-1 rounded-sm bg-current" />
-            <span className="w-1 h-1 rounded-sm bg-current" />
-            <span className="w-1 h-1 rounded-sm bg-current" />
-          </span>
-          Edit Layout
-        </button>
         <span className="text-gray-600">|</span>
         <span className="text-xs text-gray-400 font-semibold mr-2">Overlays:</span>
         {data.overlays.map((o) => {
@@ -529,8 +567,23 @@ export function TopologyMap({ data }: Props) {
           );
         })}
         <button
-          onClick={resetLayout}
-          className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors ml-2"
+          onClick={() => setSnapToGrid((v) => !v)}
+          title="Enable to move and resize boxes (with grid snapping)"
+          className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ml-2 ${
+            snapToGrid ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-500"
+          }`}
+        >
+          <span className="grid grid-cols-2 gap-0.5">
+            <span className="w-1 h-1 rounded-sm bg-current" />
+            <span className="w-1 h-1 rounded-sm bg-current" />
+            <span className="w-1 h-1 rounded-sm bg-current" />
+            <span className="w-1 h-1 rounded-sm bg-current" />
+          </span>
+          Edit Layout
+        </button>
+        <button
+          onClick={handleReset}
+          className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700 transition-colors"
         >
           Reset Layout
         </button>
@@ -589,6 +642,7 @@ export function TopologyMap({ data }: Props) {
               site={site}
               index={i}
               interactive={snapToGrid}
+              stats={siteStats.get(site.id)}
               onMouseDown={(e) => beginSiteDrag(site.id, e)}
               onResizeMouseDown={(e) => beginSiteResize(site.id, e)}
             />
