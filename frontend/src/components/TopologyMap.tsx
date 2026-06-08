@@ -490,7 +490,7 @@ export function TopologyMap({ data }: Props) {
             <span className="w-1 h-1 rounded-sm bg-current" />
             <span className="w-1 h-1 rounded-sm bg-current" />
           </span>
-          Grid
+          Edit Layout
         </button>
         <span className="text-gray-600">|</span>
         <span className="text-xs text-gray-400 font-semibold mr-2">Overlays:</span>
