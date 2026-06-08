@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { MouseEvent, WheelEvent } from "react";
 import type { TopologyResponse, DeviceSummary } from "@librenms-dash/shared";
 import { useForceLayout } from "@/hooks/useForceLayout";
+import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { useTransformPersistence, readPersistedTransform } from "@/hooks/usePersistedLayout";
 import { SiteGroup, SiteControls, DeviceGroupBorder } from "./SiteGroup";
 import { OverlayLinkLine } from "./OverlayLink";
 import { HoverableLinkPath } from "./HoverableLinkPath";
@@ -57,11 +59,16 @@ export function TopologyMap({ data }: Props) {
   const [hoveredLink, setHoveredLink] = useState<LinkTooltipData | null>(null);
   const [hoveredLinkKey, setHoveredLinkKey] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  const [hiddenOverlays, setHiddenOverlays] = useState<Record<string, boolean>>({ zerotier: true, wireguard: true, tailscale: true });
-  const [showNeighbors, setShowNeighbors] = useState(false);
-  const [showArp, setShowArp] = useState(false);
-  const [showArpDevices, setShowArpDevices] = useState(false);
-  const [snapToGrid, setSnapToGrid] = useState(false);
+  // ── Persistent filter / toggle state ────────────────────────────────────────
+  const [hiddenOverlays, setHiddenOverlays] = useLocalStorage<Record<string, boolean>>(
+    "librenms-dash:hiddenOverlays:v1",
+    { zerotier: true, wireguard: true, tailscale: true },
+  );
+  const [showNeighbors, setShowNeighbors] = useLocalStorage("librenms-dash:showNeighbors:v1", false);
+  const [showArp, setShowArp] = useLocalStorage("librenms-dash:showArp:v1", false);
+  const [showArpDevices, setShowArpDevices] = useLocalStorage("librenms-dash:showArpDevices:v1", false);
+  const [snapToGrid, setSnapToGrid] = useLocalStorage("librenms-dash:snapToGrid:v1", false);
+  // ── Ephemeral UI state (not persisted) ──────────────────────────────────────
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const popoverHovered = useRef(false);
   const deviceHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,8 +81,12 @@ export function TopologyMap({ data }: Props) {
   const alertDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertTooltipHovered = useRef(false);
 
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  // Seed viewport transform from localStorage on first render, then persist changes.
+  const [transform, setTransform] = useState(() => readPersistedTransform() ?? { x: 0, y: 0, scale: 1 });
   const lastInitialScaleRef = useRef(1);
+  // Debounce-write the transform so pan/zoom doesn't hammer localStorage on every frame.
+  useTransformPersistence(transform);
+
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const dragTarget = useRef<{
