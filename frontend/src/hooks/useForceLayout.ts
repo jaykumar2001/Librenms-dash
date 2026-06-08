@@ -698,13 +698,23 @@ export function useForceLayout(
     // and resizes from a previous session are restored after reload.
     const restoredSites = persist.applySitePositions(result.sites);
     const restoredNodes = persist.applyNodePositions(result.nodes);
+    // Links and device-group borders are derived from node positions. The freshly
+    // built links/groups still point at the pre-restore node coordinates, so rebind
+    // links to the restored nodes and refit the group borders — otherwise overlay
+    // lines and category boxes snap back to their original spots on refresh.
+    const restoredNodeMap = new Map(restoredNodes.map((n) => [n.hostname, n]));
+    const rebind = <T extends { source: LayoutNode; target: LayoutNode }>(link: T): T => ({
+      ...link,
+      source: restoredNodeMap.get(link.source.hostname) ?? link.source,
+      target: restoredNodeMap.get(link.target.hostname) ?? link.target,
+    });
     setSites(restoredSites);
     setNodes(restoredNodes);
-    setLinks(result.links);
-    setNeighborLinks(result.neighborLinks);
-    setArpLinks(result.arpLinks);
+    setLinks(result.links.map(rebind));
+    setNeighborLinks(result.neighborLinks.map(rebind));
+    setArpLinks(result.arpLinks.map(rebind));
     setArpDeviceNodes(result.arpDeviceNodes);
-    setDeviceGroups(result.deviceGroups);
+    setDeviceGroups(fitDeviceGroupsToNodes(result.deviceGroups, restoredNodes));
     setInitialScale(result.initialScale);
   }, [data, containerWidth, siteOrientations, showArpDevices]);
 
