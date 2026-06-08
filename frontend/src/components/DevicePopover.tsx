@@ -51,13 +51,15 @@ class PopoverErrorBoundary extends Component<{ children: ReactNode }, { hasError
 function DevicePopoverInner({ hostname, icon, screenX, screenY, onMouseEnter, onMouseLeave }: Props) {
   const { data, isLoading } = useDeviceDetail(hostname);
 
-  const left = Math.min(screenX + 20, window.innerWidth - 440);
+  // Clamp width to the viewport so the box never exceeds the screen on mobile.
+  const width = Math.min(420, window.innerWidth - 16);
+  const left = Math.max(8, Math.min(screenX + 20, window.innerWidth - width - 8));
   const top = Math.max(8, Math.min(screenY - 20, window.innerHeight - 520));
 
   return (
     <div
-      className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl p-4 text-sm text-gray-200 w-[420px] max-h-[500px] overflow-y-auto"
-      style={{ left, top }}
+      className="fixed z-50 bg-gray-900 border border-gray-600 rounded-lg shadow-2xl p-4 text-sm text-gray-200 max-h-[500px] overflow-y-auto"
+      style={{ left, top, width }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
