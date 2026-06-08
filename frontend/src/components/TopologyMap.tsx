@@ -440,8 +440,13 @@ export function TopologyMap({ data }: Props) {
 
   return (
     <div ref={containerRef} className="w-full h-full relative">
+      {/* Top floating bars — single flex row keeps left/right bars equal-height
+          (items-stretch) and never overlapping (justify-between; outer flex-wrap
+          drops the right bar below the left on very narrow screens). The wrapper
+          is pointer-transparent so panning still works in the gap between bars. */}
+      <div className="absolute top-0 inset-x-0 z-10 p-4 flex flex-wrap items-stretch justify-between gap-3 pointer-events-none">
       {/* Controls */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-3 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2">
+      <div className="flex flex-wrap items-center gap-3 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 pointer-events-auto">
         <button
           onClick={() => setShowNeighbors((v) => !v)}
           className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
@@ -517,7 +522,7 @@ export function TopologyMap({ data }: Props) {
       </div>
 
       {/* Status */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-4 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-4 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 text-xs pointer-events-auto">
         <span className="text-gray-400">
           {data.sites.length} sites, {data.sites.reduce((s, site) => s + site.devices.length, 0)} devices
         </span>
@@ -531,6 +536,7 @@ export function TopologyMap({ data }: Props) {
           </span>
         )}
         <span className="text-gray-500">Updated {new Date(data.lastUpdated).toLocaleTimeString()}</span>
+      </div>
       </div>
 
       {/* SVG */}
