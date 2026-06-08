@@ -5,15 +5,26 @@ const SITE_COLORS: string[] = [
   "#3b82f6", "#f59e0b", "#10b981", "#ec4899", "#8b5cf6", "#06b6d4",
 ];
 
+export interface SiteStats {
+  lldp: number;
+  arp: number;
+  discovered: number;
+}
+
 interface SiteProps {
   site: SiteCluster;
   index: number;
   interactive?: boolean;
+  stats?: SiteStats;
   onMouseDown?: (event: MouseEvent<SVGGElement>) => void;
   onResizeMouseDown?: (event: MouseEvent<SVGGElement>) => void;
 }
 
-export function SiteGroup({ site, index, interactive = true, onMouseDown, onResizeMouseDown }: SiteProps) {
+const LLDP_COLOR = "#38bdf8";
+const ARP_COLOR = "#fbbf24";
+const DISCOVERED_COLOR = "#a3e635";
+
+export function SiteGroup({ site, index, interactive = true, stats, onMouseDown, onResizeMouseDown }: SiteProps) {
   const color = SITE_COLORS[index % SITE_COLORS.length];
 
   return (
@@ -42,6 +53,19 @@ export function SiteGroup({ site, index, interactive = true, onMouseDown, onResi
       >
         {site.location}
       </text>
+      {stats && (
+        <text
+          x={site.x + 10}
+          y={site.y + 27}
+          fontSize={8.5}
+          fontWeight={600}
+          fontFamily="system-ui, sans-serif"
+        >
+          <tspan fill={LLDP_COLOR}>LLDP/CDP {stats.lldp}</tspan>
+          <tspan fill={ARP_COLOR} dx={8}>ARP {stats.arp}</tspan>
+          <tspan fill={DISCOVERED_COLOR} dx={8}>Discovered {stats.discovered}</tspan>
+        </text>
+      )}
       {interactive && (
         <g
           onMouseDown={onResizeMouseDown}
