@@ -54,6 +54,11 @@ function snapToNearby(value: number, candidates: number[]): number | null {
 
 export function TopologyMap({ data }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // True on devices with a real hover pointer (desktop); false on touch screens.
+  const canHover = useMemo(
+    () => typeof window === "undefined" || !window.matchMedia ? true : window.matchMedia("(hover: hover)").matches,
+    [],
+  );
   const [dimensions, setDimensions] = useState({ width: 1200, height: 800 });
   const [hoveredDevice, setHoveredDevice] = useState<{ hostname: string; x: number; y: number; icon: string } | null>(null);
   const [hoveredLink, setHoveredLink] = useState<LinkTooltipData | null>(null);
@@ -253,10 +258,14 @@ export function TopologyMap({ data }: Props) {
       if (deviceHoverTimer.current) clearTimeout(deviceHoverTimer.current);
       popoverHovered.current = false;
       setHighlightedId(hostname);
-      deviceHoverTimer.current = setTimeout(() => {
-        const dev = deviceMap.get(hostname);
-        setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
-      }, LINK_HOVER_DELAY);
+      // On touch devices a tap fires synthetic hover; the full popover would
+      // cover the highlighted links, so only highlight and skip the popover.
+      if (canHover) {
+        deviceHoverTimer.current = setTimeout(() => {
+          const dev = deviceMap.get(hostname);
+          setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
+        }, LINK_HOVER_DELAY);
+      }
     } else {
       if (deviceHoverTimer.current) { clearTimeout(deviceHoverTimer.current); deviceHoverTimer.current = null; }
       dismissTimer.current = setTimeout(() => {
@@ -266,7 +275,7 @@ export function TopologyMap({ data }: Props) {
         }
       }, 150);
     }
-  }, [deviceMap]);
+  }, [deviceMap, canHover]);
 
   // --- Link hover handlers ---
   const showLinkTooltip = useCallback((key: string, tooltipData: LinkTooltipData) => {
