@@ -708,13 +708,18 @@ export function useForceLayout(
       source: restoredNodeMap.get(link.source.hostname) ?? link.source,
       target: restoredNodeMap.get(link.target.hostname) ?? link.target,
     });
-    setSites(restoredSites);
+    const restoredGroups = fitDeviceGroupsToNodes(result.deviceGroups, restoredNodes);
+    // ARP discovered-device boxes are placed relative to the restored site/group
+    // positions and the site grows to enclose them. They were set straight from
+    // the fresh layout (original site coords), so they snapped back on refresh.
+    const arp = relayoutArpNodes(restoredSites, restoredGroups, result.arpDeviceNodes);
+    setSites(arp.sites);
     setNodes(restoredNodes);
     setLinks(result.links.map(rebind));
     setNeighborLinks(result.neighborLinks.map(rebind));
     setArpLinks(result.arpLinks.map(rebind));
-    setArpDeviceNodes(result.arpDeviceNodes);
-    setDeviceGroups(fitDeviceGroupsToNodes(result.deviceGroups, restoredNodes));
+    setArpDeviceNodes(arp.arpNodes);
+    setDeviceGroups(restoredGroups);
     setInitialScale(result.initialScale);
   }, [data, containerWidth, siteOrientations, showArpDevices]);
 
