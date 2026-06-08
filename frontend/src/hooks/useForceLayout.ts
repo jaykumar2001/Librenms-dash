@@ -161,6 +161,7 @@ function layoutAll(
   siteOrientations: Record<string, SiteOrientation> = {},
   showArpDevices = false,
   viewH = 800,
+  topReserve = 56,
 ): { sites: SiteCluster[]; nodes: LayoutNode[]; links: LayoutLink[]; neighborLinks: NeighborLayoutLink[]; arpLinks: ArpLayoutLink[]; deviceGroups: DeviceGroup[]; arpDeviceNodes: ArpDeviceLayoutNode[]; initialScale: number } {
 
   // Sort sites: largest first
@@ -211,8 +212,8 @@ function layoutAll(
   }
 
   // Determine placement: try to fit all sites within viewW × viewH.
-  // Reserve space for the top control bar (~56px).
-  const TOP_RESERVE = 56;
+  // Reserve space for the top control bars (measured at runtime, defaults to ~56px).
+  const TOP_RESERVE = topReserve;
   const usableH = Math.max(viewH - TOP_RESERVE, 300);
   const usableW = Math.max(viewW, 400);
 
@@ -627,13 +628,14 @@ function layoutSignature(
   containerHeight: number,
   siteOrientations: Record<string, SiteOrientation>,
   showArpDevices: boolean,
+  topReserve: number,
 ): string {
   const sites = data.sites
     .map((s) => `${s.id}:${s.devices.map((d) => d.hostname).sort().join(",")}`)
     .sort()
     .join("|");
   const arp = (data.arpDevices ?? []).map((a) => a.mac).sort().join(",");
-  return `${sites}#${arp}@${containerWidth}x${containerHeight}|${JSON.stringify(siteOrientations)}|${showArpDevices}`;
+  return `${sites}#${arp}@${containerWidth}x${containerHeight}|${JSON.stringify(siteOrientations)}|${showArpDevices}|${topReserve}`;
 }
 
 export function useForceLayout(
@@ -641,6 +643,7 @@ export function useForceLayout(
   containerWidth: number,
   containerHeight: number,
   showArpDevices = false,
+  topReserve = 56,
 ) {
   const persist = usePersistedLayout();
 
@@ -690,10 +693,10 @@ export function useForceLayout(
     if (!data || !containerWidth) return;
     // Skip regenerating the layout (which discards manual drags/resizes) when the
     // topology and layout inputs are unchanged — e.g. on the 5-minute background poll.
-    const sig = layoutSignature(data, containerWidth, containerHeight, siteOrientations, showArpDevices);
+    const sig = layoutSignature(data, containerWidth, containerHeight, siteOrientations, showArpDevices, topReserve);
     if (sig === layoutSigRef.current) return;
     layoutSigRef.current = sig;
-    const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices, containerHeight);
+    const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices, containerHeight, topReserve);
     // Overlay saved positions on top of freshly-computed ones so manual drags
     // and resizes from a previous session are restored after reload.
     const restoredSites = persist.applySitePositions(result.sites);
@@ -721,15 +724,15 @@ export function useForceLayout(
     setArpDeviceNodes(arp.arpNodes);
     setDeviceGroups(restoredGroups);
     setInitialScale(result.initialScale);
-  }, [data, containerWidth, siteOrientations, showArpDevices]);
+  }, [data, containerWidth, containerHeight, siteOrientations, showArpDevices, topReserve]);
 
   const resetLayout = useCallback(() => {
     if (!data || !containerWidth) return;
     // Wipe saved positions so reset truly goes back to auto-layout.
     persist.clearPersistedLayout();
     setSiteOrientations({});
-    layoutSigRef.current = layoutSignature(data, containerWidth, containerHeight, {}, showArpDevices);
-    const result = layoutAll(data, containerWidth, {}, showArpDevices, containerHeight);
+    layoutSigRef.current = layoutSignature(data, containerWidth, containerHeight, {}, showArpDevices, topReserve);
+    const result = layoutAll(data, containerWidth, {}, showArpDevices, containerHeight, topReserve);
     setSites(result.sites);
     setNodes(result.nodes);
     setLinks(result.links);
@@ -738,7 +741,7 @@ export function useForceLayout(
     setArpDeviceNodes(result.arpDeviceNodes);
     setDeviceGroups(result.deviceGroups);
     setInitialScale(result.initialScale);
-  }, [data, containerWidth, showArpDevices]);
+  }, [data, containerWidth, containerHeight, showArpDevices, topReserve]);
 
   const toggleSiteOrientation = useCallback((siteId: string) => {
     setSiteOrientations((prev) => {
