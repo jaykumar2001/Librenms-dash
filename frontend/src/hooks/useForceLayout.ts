@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { TopologyResponse, DeviceSummary, ArpDiscoveredDevice } from "@librenms-dash/shared";
+import { usePersistedLayout } from "./usePersistedLayout";
 
 export interface LayoutNode {
   id: string;
@@ -641,6 +642,8 @@ export function useForceLayout(
   containerHeight: number,
   showArpDevices = false,
 ) {
+  const persist = usePersistedLayout();
+
   const [nodes, setNodes] = useState<LayoutNode[]>([]);
   const [links, setLinks] = useState<LayoutLink[]>([]);
   const [neighborLinks, setNeighborLinks] = useState<NeighborLayoutLink[]>([]);
@@ -648,7 +651,10 @@ export function useForceLayout(
   const [arpDeviceNodes, setArpDeviceNodes] = useState<ArpDeviceLayoutNode[]>([]);
   const [sites, setSites] = useState<SiteCluster[]>([]);
   const [deviceGroups, setDeviceGroups] = useState<DeviceGroup[]>([]);
-  const [siteOrientations, setSiteOrientations] = useState<Record<string, SiteOrientation>>({});
+  // Seed orientations from localStorage so portrait/landscape choices survive reload.
+  const [siteOrientations, setSiteOrientations] = useState<Record<string, SiteOrientation>>(
+    () => persist.getSavedOrientations(),
+  );
   const [initialScale, setInitialScale] = useState(1);
 
   const nodesRef = useRef(nodes);
@@ -688,20 +694,37 @@ export function useForceLayout(
     if (sig === layoutSigRef.current) return;
     layoutSigRef.current = sig;
     const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices, containerHeight);
-    setSites(result.sites);
-    setNodes(result.nodes);
-    setLinks(result.links);
-    setNeighborLinks(result.neighborLinks);
-    setArpLinks(result.arpLinks);
+    // Overlay saved positions on top of freshly-computed ones so manual drags
+    // and resizes from a previous session are restored after reload.
+    const restoredSites = persist.applySitePositions(result.sites);
+    const restoredNodes = persist.applyNodePositions(result.nodes);
+    // Links and device-group borders are derived from node positions. The freshly
+    // built links/groups still point at the pre-restore node coordinates, so rebind
+    // links to the restored nodes and refit the group borders — otherwise overlay
+    // lines and category boxes snap back to their original spots on refresh.
+    const restoredNodeMap = new Map(restoredNodes.map((n) => [n.hostname, n]));
+    const rebind = <T extends { source: LayoutNode; target: LayoutNode }>(link: T): T => ({
+      ...link,
+      source: restoredNodeMap.get(link.source.hostname) ?? link.source,
+      target: restoredNodeMap.get(link.target.hostname) ?? link.target,
+    });
+    setSites(restoredSites);
+    setNodes(restoredNodes);
+    setLinks(result.links.map(rebind));
+    setNeighborLinks(result.neighborLinks.map(rebind));
+    setArpLinks(result.arpLinks.map(rebind));
     setArpDeviceNodes(result.arpDeviceNodes);
-    setDeviceGroups(result.deviceGroups);
+    setDeviceGroups(fitDeviceGroupsToNodes(result.deviceGroups, restoredNodes));
     setInitialScale(result.initialScale);
   }, [data, containerWidth, siteOrientations, showArpDevices]);
 
   const resetLayout = useCallback(() => {
     if (!data || !containerWidth) return;
-    layoutSigRef.current = layoutSignature(data, containerWidth, containerHeight, siteOrientations, showArpDevices);
-    const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices, containerHeight);
+    // Wipe saved positions so reset truly goes back to auto-layout.
+    persist.clearPersistedLayout();
+    setSiteOrientations({});
+    layoutSigRef.current = layoutSignature(data, containerWidth, containerHeight, {}, showArpDevices);
+    const result = layoutAll(data, containerWidth, {}, showArpDevices, containerHeight);
     setSites(result.sites);
     setNodes(result.nodes);
     setLinks(result.links);
@@ -710,19 +733,24 @@ export function useForceLayout(
     setArpDeviceNodes(result.arpDeviceNodes);
     setDeviceGroups(result.deviceGroups);
     setInitialScale(result.initialScale);
-  }, [data, containerWidth, siteOrientations, showArpDevices]);
+  }, [data, containerWidth, showArpDevices]);
 
   const toggleSiteOrientation = useCallback((siteId: string) => {
-    setSiteOrientations((prev) => ({
-      ...prev,
-      [siteId]: prev[siteId] === "portrait" ? "landscape" : "portrait",
-    }));
+    setSiteOrientations((prev) => {
+      const next = { ...prev, [siteId]: prev[siteId] === "portrait" ? "landscape" : ("portrait" as SiteOrientation) };
+      persist.saveSiteOrientation(siteId, next[siteId]);
+      return next;
+    });
   }, []);
 
   const moveSite = useCallback((siteId: string, dx: number, dy: number) => {
-    setSites((prev) => prev.map((site) => (
-      site.id === siteId ? { ...site, x: site.x + dx, y: site.y + dy } : site
-    )));
+    setSites((prev) => {
+      const next = prev.map((site) =>
+        site.id === siteId ? { ...site, x: site.x + dx, y: site.y + dy } : site,
+      );
+      persist.saveSitePositions(next.filter((s) => s.id === siteId));
+      return next;
+    });
     setDeviceGroups((prev) => prev.map((group) => (
       group.siteId === siteId ? { ...group, x: group.x + dx, y: group.y + dy } : group
     )));
@@ -733,6 +761,7 @@ export function useForceLayout(
       const nextNodes = prev.map((node) => (
         node.siteId === siteId ? { ...node, x: node.x + dx, y: node.y + dy } : node
       ));
+      persist.saveNodePositions(nextNodes.filter((n) => n.siteId === siteId));
       relinkNodes(nextNodes);
       return nextNodes;
     });
@@ -746,6 +775,8 @@ export function useForceLayout(
     const fittedSites = fitSitesToDeviceGroups(sitesRef.current, nextGroups);
     const arp = relayoutArpNodes(fittedSites, nextGroups, arpDeviceNodesRef.current);
 
+    persist.saveNodePositions(nextNodes.filter((n) => n.hostname === hostname));
+    persist.saveSitePositions(arp.sites);
     setNodes(nextNodes);
     setDeviceGroups(nextGroups);
     setSites(arp.sites);
@@ -769,6 +800,8 @@ export function useForceLayout(
     const resizedSites = sitesRef.current.map((candidate) => candidate.id === siteId ? result.site : candidate);
     const arp = relayoutArpNodes(resizedSites, result.groups, arpDeviceNodesRef.current);
 
+    persist.saveSitePositions(arp.sites.filter((s) => s.id === siteId));
+    persist.saveNodePositions(result.nodes.filter((n) => n.siteId === siteId));
     setSites(arp.sites);
     setDeviceGroups(result.groups);
     setNodes(result.nodes);

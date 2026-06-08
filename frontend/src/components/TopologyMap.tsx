@@ -2,6 +2,8 @@ import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { MouseEvent, WheelEvent } from "react";
 import type { TopologyResponse, DeviceSummary } from "@librenms-dash/shared";
 import { useForceLayout } from "@/hooks/useForceLayout";
+import { useLocalStorage } from "@/hooks/useLocalStorage";
+import { useTransformPersistence, readPersistedTransform } from "@/hooks/usePersistedLayout";
 import { SiteGroup, SiteControls, DeviceGroupBorder } from "./SiteGroup";
 import { OverlayLinkLine } from "./OverlayLink";
 import { HoverableLinkPath } from "./HoverableLinkPath";
@@ -52,16 +54,28 @@ function snapToNearby(value: number, candidates: number[]): number | null {
 
 export function TopologyMap({ data }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // True on devices with a real hover pointer (desktop); false on touch screens.
+  const canHover = useMemo(
+    () => typeof window === "undefined" || !window.matchMedia ? true : window.matchMedia("(hover: hover)").matches,
+    [],
+  );
   const [dimensions, setDimensions] = useState({ width: 1200, height: 800 });
   const [hoveredDevice, setHoveredDevice] = useState<{ hostname: string; x: number; y: number; icon: string } | null>(null);
+  // Device shown in the mobile bottom sheet (touch devices only).
+  const [infoDevice, setInfoDevice] = useState<{ hostname: string; icon: string } | null>(null);
   const [hoveredLink, setHoveredLink] = useState<LinkTooltipData | null>(null);
   const [hoveredLinkKey, setHoveredLinkKey] = useState<string | null>(null);
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
-  const [hiddenOverlays, setHiddenOverlays] = useState<Record<string, boolean>>({ zerotier: true, wireguard: true, tailscale: true });
-  const [showNeighbors, setShowNeighbors] = useState(false);
-  const [showArp, setShowArp] = useState(false);
-  const [showArpDevices, setShowArpDevices] = useState(false);
-  const [snapToGrid, setSnapToGrid] = useState(false);
+  // ── Persistent filter / toggle state ────────────────────────────────────────
+  const [hiddenOverlays, setHiddenOverlays] = useLocalStorage<Record<string, boolean>>(
+    "librenms-dash:hiddenOverlays:v1",
+    { zerotier: true, wireguard: true, tailscale: true },
+  );
+  const [showNeighbors, setShowNeighbors] = useLocalStorage("librenms-dash:showNeighbors:v1", false);
+  const [showArp, setShowArp] = useLocalStorage("librenms-dash:showArp:v1", false);
+  const [showArpDevices, setShowArpDevices] = useLocalStorage("librenms-dash:showArpDevices:v1", false);
+  const [snapToGrid, setSnapToGrid] = useLocalStorage("librenms-dash:snapToGrid:v1", false);
+  // ── Ephemeral UI state (not persisted) ──────────────────────────────────────
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const popoverHovered = useRef(false);
   const deviceHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -74,8 +88,12 @@ export function TopologyMap({ data }: Props) {
   const alertDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertTooltipHovered = useRef(false);
 
-  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  // Seed viewport transform from localStorage on first render, then persist changes.
+  const [transform, setTransform] = useState(() => readPersistedTransform() ?? { x: 0, y: 0, scale: 1 });
   const lastInitialScaleRef = useRef(1);
+  // Debounce-write the transform so pan/zoom doesn't hammer localStorage on every frame.
+  useTransformPersistence(transform);
+
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
   const dragTarget = useRef<{
@@ -242,10 +260,18 @@ export function TopologyMap({ data }: Props) {
       if (deviceHoverTimer.current) clearTimeout(deviceHoverTimer.current);
       popoverHovered.current = false;
       setHighlightedId(hostname);
-      deviceHoverTimer.current = setTimeout(() => {
-        const dev = deviceMap.get(hostname);
-        setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
-      }, LINK_HOVER_DELAY);
+      // On touch devices a tap fires synthetic hover; the full popover would
+      // cover the highlighted links, so only highlight and skip the popover.
+      // Details are reachable via the bottom sheet (see infoDevice / the chip).
+      if (canHover) {
+        deviceHoverTimer.current = setTimeout(() => {
+          const dev = deviceMap.get(hostname);
+          setHoveredDevice({ hostname, x, y, icon: dev?.icon ?? "generic.svg" });
+        }, LINK_HOVER_DELAY);
+      } else {
+        // Keep an already-open bottom sheet in sync with the newly tapped device.
+        setInfoDevice((prev) => (prev ? { hostname, icon: deviceMap.get(hostname)?.icon ?? "generic.svg" } : prev));
+      }
     } else {
       if (deviceHoverTimer.current) { clearTimeout(deviceHoverTimer.current); deviceHoverTimer.current = null; }
       dismissTimer.current = setTimeout(() => {
@@ -255,7 +281,7 @@ export function TopologyMap({ data }: Props) {
         }
       }, 150);
     }
-  }, [deviceMap]);
+  }, [deviceMap, canHover]);
 
   // --- Link hover handlers ---
   const showLinkTooltip = useCallback((key: string, tooltipData: LinkTooltipData) => {
@@ -429,8 +455,13 @@ export function TopologyMap({ data }: Props) {
 
   return (
     <div ref={containerRef} className="w-full h-full relative">
+      {/* Top floating bars — single flex row keeps left/right bars equal-height
+          (items-stretch) and never overlapping (justify-between; outer flex-wrap
+          drops the right bar below the left on very narrow screens). The wrapper
+          is pointer-transparent so panning still works in the gap between bars. */}
+      <div className="absolute top-0 inset-x-0 z-10 p-4 flex flex-wrap items-stretch justify-between gap-3 pointer-events-none">
       {/* Controls */}
-      <div className="absolute top-4 left-4 z-10 flex items-center gap-3 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2">
+      <div className="flex flex-wrap items-center gap-3 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 pointer-events-auto">
         <button
           onClick={() => setShowNeighbors((v) => !v)}
           className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
@@ -474,7 +505,7 @@ export function TopologyMap({ data }: Props) {
             <span className="w-1 h-1 rounded-sm bg-current" />
             <span className="w-1 h-1 rounded-sm bg-current" />
           </span>
-          Grid
+          Edit Layout
         </button>
         <span className="text-gray-600">|</span>
         <span className="text-xs text-gray-400 font-semibold mr-2">Overlays:</span>
@@ -506,7 +537,7 @@ export function TopologyMap({ data }: Props) {
       </div>
 
       {/* Status */}
-      <div className="absolute top-4 right-4 z-10 flex items-center gap-4 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-4 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 text-xs pointer-events-auto">
         <span className="text-gray-400">
           {data.sites.length} sites, {data.sites.reduce((s, site) => s + site.devices.length, 0)} devices
         </span>
@@ -520,6 +551,7 @@ export function TopologyMap({ data }: Props) {
           </span>
         )}
         <span className="text-gray-500">Updated {new Date(data.lastUpdated).toLocaleTimeString()}</span>
+      </div>
       </div>
 
       {/* SVG */}
@@ -831,6 +863,32 @@ export function TopologyMap({ data }: Props) {
           screenY={hoveredDevice.y}
           onMouseEnter={() => { popoverHovered.current = true; if (dismissTimer.current) { clearTimeout(dismissTimer.current); dismissTimer.current = null; } }}
           onMouseLeave={() => { popoverHovered.current = false; setHoveredDevice(null); }}
+        />
+      )}
+
+      {/* Touch: "View details" chip — appears when a device is tapped/highlighted
+          and the bottom sheet isn't already open. Tapping it opens the sheet. */}
+      {!canHover && !infoDevice && highlightedId && deviceMap.has(highlightedId) && (
+        <button
+          onClick={() => setInfoDevice({ hostname: highlightedId, icon: deviceMap.get(highlightedId)?.icon ?? "generic.svg" })}
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-sky-600 text-white text-sm font-semibold rounded-full shadow-lg px-4 py-2.5"
+        >
+          <span className="w-4 h-4 flex items-center justify-center rounded-full border border-white text-xs">i</span>
+          View {displayName(highlightedId)} details
+        </button>
+      )}
+
+      {/* Touch: device details as a bottom sheet that leaves the canvas visible. */}
+      {!canHover && infoDevice && (
+        <DevicePopover
+          hostname={infoDevice.hostname}
+          icon={infoDevice.icon}
+          screenX={0}
+          screenY={0}
+          bottomSheet
+          onMouseEnter={() => {}}
+          onMouseLeave={() => {}}
+          onClose={() => setInfoDevice(null)}
         />
       )}
 
