@@ -127,8 +127,24 @@ export function usePersistedLayout() {
 // ─── Viewport transform persistence ───────────────────────────────────────────
 
 const TRANSFORM_KEY = "librenms-dash:transform:v1";
+export const USE_FIT_TRANSFORM_KEY = "librenms-dash:use-fit-transform";
 
 interface PersistedTransform { x: number; y: number; scale: number }
+
+/** Set after a fresh login so the dashboard uses fit-to-screen zoom, not localStorage. */
+export function requestFitTransform(): void {
+  try { sessionStorage.setItem(USE_FIT_TRANSFORM_KEY, "1"); } catch { /* ignore */ }
+}
+
+export function consumeFitTransformRequest(): boolean {
+  try {
+    if (sessionStorage.getItem(USE_FIT_TRANSFORM_KEY)) {
+      sessionStorage.removeItem(USE_FIT_TRANSFORM_KEY);
+      return true;
+    }
+  } catch { /* ignore */ }
+  return false;
+}
 
 export function readPersistedTransform(): PersistedTransform | null {
   try {

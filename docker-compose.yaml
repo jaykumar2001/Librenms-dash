@@ -8,6 +8,8 @@ services:
     environment:
       - LIBRENMS_URL=${LIBRENMS_URL:-https://librenms.local.lan}
       - LIBRENMS_TOKEN=${LIBRENMS_TOKEN}
+      - AUTH_USERNAME=${AUTH_USERNAME}
+      - AUTH_PASSWORD=${AUTH_PASSWORD}
       - PORT=3001
       - NODE_ENV=production
       - NODE_TLS_REJECT_UNAUTHORIZED=0

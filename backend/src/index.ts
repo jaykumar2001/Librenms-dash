@@ -9,6 +9,8 @@ import topologyRoutes from "./routes/topology.js";
 import deviceRoutes from "./routes/devices.js";
 import graphRoutes from "./routes/graphs.js";
 import portRoutes from "./routes/ports.js";
+import authRoutes from "./routes/auth.js";
+import { requireAuth } from "./middleware/auth.js";
 
 const app = new Hono();
 
@@ -23,12 +25,20 @@ let cacheReady = false;
 
 app.get("/api/health", (c) => c.json({ status: cacheReady ? "ok" : "warming", uptime: process.uptime() }));
 
+app.route("/api/auth", authRoutes);
+
 app.use("/api/*", async (c, next) => {
+  if (c.req.path.startsWith("/api/auth")) {
+    await next();
+    return;
+  }
   if (!cacheReady && c.req.path !== "/api/health") {
     return c.json({ error: "Cache warming, try again shortly" }, 503);
   }
   await next();
 });
+
+app.use("/api/*", requireAuth());
 
 app.route("/api/topology", topologyRoutes);
 app.route("/api/devices", deviceRoutes);
