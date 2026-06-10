@@ -1,9 +1,15 @@
 import { Hono } from "hono";
+import { execSync } from "node:child_process";
 import { cache } from "../cache/store.js";
 import type { TopologyResponse, Site, DeviceSummary, OverlayGroup, NeighborLink, ArpLink, ArpDiscoveredDevice, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsLocation, LnmsAlert, LnmsDeviceIp, LnmsLink } from "../librenms/types.js";
 import { getOverlayPortSummaries, findLanIp, findDeviceIps } from "../librenms/overlays.js";
 import { normalizeMac } from "../librenms/oui.js";
+
+let commitSha: string | undefined;
+try {
+  commitSha = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+} catch { /* not a git repo or git unavailable */ }
 
 const app = new Hono();
 
@@ -139,6 +145,7 @@ app.get("/", (c) => {
       timestamp: a.timestamp,
     })),
     lastUpdated: new Date().toISOString(),
+    commitSha,
   };
 
   return c.json(response);

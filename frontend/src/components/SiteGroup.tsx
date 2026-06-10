@@ -9,6 +9,7 @@ export interface SiteStats {
   lldp: number;
   arp: number;
   discovered: number;
+  routes: number;
 }
 
 interface SiteProps {
@@ -23,6 +24,7 @@ interface SiteProps {
 const LLDP_COLOR = "#38bdf8";
 const ARP_COLOR = "#fbbf24";
 const DISCOVERED_COLOR = "#a3e635";
+const ROUTES_COLOR = "#34d399";
 
 export function SiteGroup({ site, index, interactive = true, stats, onMouseDown, onResizeMouseDown }: SiteProps) {
   const color = SITE_COLORS[index % SITE_COLORS.length];
@@ -45,27 +47,18 @@ export function SiteGroup({ site, index, interactive = true, stats, onMouseDown,
       <text
         x={site.x + 10}
         y={site.y + 15}
-        fill={color}
-        fillOpacity={0.9}
-        fontSize={12}
-        fontWeight={700}
         fontFamily="system-ui, sans-serif"
       >
-        {site.location}
+        <tspan fill={color} fillOpacity={0.9} fontSize={12} fontWeight={700}>{site.location}</tspan>
+        {stats && (
+          <>
+            <tspan fill={ROUTES_COLOR} dx={10} fontSize={8.5} fontWeight={600}>Routes {stats.routes}</tspan>
+            <tspan fill={LLDP_COLOR} dx={8} fontSize={8.5} fontWeight={600}>LLDP/CDP {stats.lldp}</tspan>
+            <tspan fill={ARP_COLOR} dx={8} fontSize={8.5} fontWeight={600}>ARP {stats.arp}</tspan>
+            <tspan fill={DISCOVERED_COLOR} dx={8} fontSize={8.5} fontWeight={600}>Discovered {stats.discovered}</tspan>
+          </>
+        )}
       </text>
-      {stats && (
-        <text
-          x={site.x + 10}
-          y={site.y + 27}
-          fontSize={8.5}
-          fontWeight={600}
-          fontFamily="system-ui, sans-serif"
-        >
-          <tspan fill={LLDP_COLOR}>LLDP/CDP {stats.lldp}</tspan>
-          <tspan fill={ARP_COLOR} dx={8}>ARP {stats.arp}</tspan>
-          <tspan fill={DISCOVERED_COLOR} dx={8}>Discovered {stats.discovered}</tspan>
-        </text>
-      )}
       {interactive && (
         <g
           onMouseDown={onResizeMouseDown}

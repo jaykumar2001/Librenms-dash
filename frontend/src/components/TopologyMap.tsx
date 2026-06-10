@@ -12,6 +12,7 @@ import { ArpDeviceNode } from "./ArpDeviceNode";
 import { DevicePopover } from "./DevicePopover";
 import { LinkTooltip, type LinkTooltipData } from "./LinkTooltip";
 import { curvedLinkPath, pointToPointPath, computeDominantSide, DEVICE_HALF, ARP_HALF, type Side } from "@/lib/linkGeometry";
+import { Logo } from "./Logo";
 
 interface Props {
   data: TopologyResponse;
@@ -97,6 +98,18 @@ export function TopologyMap({ data }: Props) {
   const alertHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertTooltipHovered = useRef(false);
+  const prevCommitSha = useRef(data.commitSha);
+  const [shaChanged, setShaChanged] = useState(false);
+
+  useEffect(() => {
+    if (prevCommitSha.current && data.commitSha && prevCommitSha.current !== data.commitSha) {
+      setShaChanged(true);
+      const timer = setTimeout(() => setShaChanged(false), 15000);
+      prevCommitSha.current = data.commitSha;
+      return () => clearTimeout(timer);
+    }
+    prevCommitSha.current = data.commitSha;
+  }, [data.commitSha]);
 
   // After login, fit to screen instead of restoring a saved zoom/pan.
   const useFitTransformRef = useRef(consumeFitTransformRequest());
@@ -622,14 +635,17 @@ export function TopologyMap({ data }: Props) {
   // computed (independent of the visibility toggles); discovered devices come
   // straight from the source data so the count shows even when the layer is off.
   const siteStats = useMemo(() => {
-    const map = new Map<string, { lldp: number; arp: number; discovered: number }>();
+    const map = new Map<string, { lldp: number; arp: number; discovered: number; routes: number }>();
     const bucket = (id: string) => {
       let s = map.get(id);
-      if (!s) { s = { lldp: 0, arp: 0, discovered: 0 }; map.set(id, s); }
+      if (!s) { s = { lldp: 0, arp: 0, discovered: 0, routes: 0 }; map.set(id, s); }
       return s;
     };
     // Seed every site so the header shows counts (including zeros) for all locations.
-    for (const site of data.sites) bucket(site.id);
+    for (const site of data.sites) {
+      const b = bucket(site.id);
+      for (const dev of site.devices) b.routes += dev.routes?.length ?? 0;
+    }
     for (const nl of neighborLinks) {
       for (const id of new Set([nl.source.siteId, nl.target.siteId])) bucket(id).lldp++;
     }
@@ -639,6 +655,14 @@ export function TopologyMap({ data }: Props) {
     for (const ad of (data.arpDevices ?? [])) bucket(ad.siteId).discovered++;
     return map;
   }, [neighborLinks, arpLinks, data.arpDevices, data.sites]);
+
+  const totalRoutes = useMemo(() => {
+    let count = 0;
+    for (const site of data.sites) {
+      for (const dev of site.devices) count += dev.routes?.length ?? 0;
+    }
+    return count;
+  }, [data.sites]);
 
   return (
     <div ref={containerRef} className="w-full h-full relative">
@@ -679,6 +703,10 @@ export function TopologyMap({ data }: Props) {
           />
           Discovered ({data.arpDevices?.length ?? 0})
         </button>
+        <span className="flex items-center gap-1.5 text-xs px-2 py-1 rounded bg-gray-800 text-gray-400">
+          <span className="w-2 h-2 inline-block rounded-full" style={{ backgroundColor: "#34d399" }} />
+          Routes ({totalRoutes})
+        </span>
         <span className="text-gray-600">|</span>
         <span className="text-xs text-gray-400 font-semibold mr-2">Overlays:</span>
         {data.overlays.map((o) => {
@@ -1153,6 +1181,38 @@ export function TopologyMap({ data }: Props) {
           </table>
         </div>
       )}
+
+      {/* Top-right: Logo */}
+      <div className="absolute top-4 right-4 z-10 pointer-events-none">
+        <Logo size={48} />
+      </div>
+
+      {/* Bottom-right: GPLv3 copyright, GitHub link, commit SHA */}
+      <div className="absolute bottom-2 right-2 z-10 pointer-events-auto flex items-center gap-2 text-[10px] text-gray-500">
+        <span>© {new Date().getFullYear()} GPLv3</span>
+        <span className="text-gray-700">·</span>
+        <a
+          href="https://github.com/jaykumar2001/Librenms-dash"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-gray-300 transition-colors underline underline-offset-2"
+        >
+          GitHub
+        </a>
+        {data.commitSha && (
+          <>
+            <span className="text-gray-700">·</span>
+            <a
+              href={`https://github.com/jaykumar2001/Librenms-dash/commit/${data.commitSha}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={`font-mono transition-colors ${shaChanged ? "text-yellow-400 font-bold animate-pulse" : "hover:text-gray-300"}`}
+            >
+              {data.commitSha}
+            </a>
+          </>
+        )}
+      </div>
     </div>
   );
 }

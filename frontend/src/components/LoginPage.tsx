@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useAuth } from "@/context/AuthContext";
+import { Logo } from "./Logo";
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -24,7 +25,10 @@ export function LoginPage() {
   return (
     <div className="w-full max-w-sm mx-auto">
         <div className="text-center mb-8">
-          <h1 className="text-xl font-semibold text-white mb-2">LibreNMS Dash</h1>
+          <Logo size={72} className="mx-auto mb-3" />
+          <h1 className="text-xl font-semibold text-white mb-2">
+            <span style={{ color: "#74b743" }}>LibreNMS</span> Dash
+          </h1>
           <p className="text-gray-400 text-sm">Sign in to view the topology dashboard</p>
         </div>
 
@@ -71,6 +75,19 @@ export function LoginPage() {
             {isSubmitting ? "Signing in..." : "Sign in"}
           </button>
         </form>
+
+        <div className="mt-8 text-center text-[10px] text-gray-500">
+          <span>© {new Date().getFullYear()} GPLv3</span>
+          <span className="text-gray-700 mx-1">·</span>
+          <a
+            href="https://github.com/jaykumar2001/Librenms-dash"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-gray-300 transition-colors underline underline-offset-2"
+          >
+            GitHub
+          </a>
+        </div>
     </div>
   );
 }
