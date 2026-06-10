@@ -98,6 +98,17 @@ export interface LnmsArpEntry {
   context_name: string;
 }
 
+export interface LnmsRoute {
+  inetCidrRouteDest: string;
+  inetCidrRoutePfxLen: string;
+  inetCidrRouteNextHop: string;
+  inetCidrRouteIfIndex: string;
+  inetCidrRouteProto: string;
+  inetCidrRouteType: string;
+  inetCidrRouteDestType: string;
+  context_name: string;
+}
+
 export interface LnmsListResponse<T> {
   count: number;
   [key: string]: T[] | number | string;
