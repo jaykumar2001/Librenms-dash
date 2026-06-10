@@ -1,6 +1,17 @@
-# LibreNMS-Dash
+<p align="center">
+  <img src="frontend/public/favicon.svg" width="80" alt="LibreNMS-Dash logo" />
+</p>
 
-LibreNMS-Dash is a LibreNMS-backed network dashboard. It aggregates devices, sites, overlays, alerts, and graphs into a single topology view with live hover details and SVG-based layout controls.
+<h1 align="center">
+  <img src="https://img.shields.io/badge/LibreNMS-74b743?style=flat-square&logoColor=white" alt="LibreNMS" height="24" />
+  <img src="https://img.shields.io/badge/-Dash-334155?style=flat-square" alt="Dash" height="24" />
+</h1>
+
+<p align="center">
+  <a href="https://github.com/jaykumar2001/Librenms-dash"><img src="https://img.shields.io/badge/license-GPLv3-blue.svg" alt="License" /></a>
+</p>
+
+**LibreNMS-Dash** is a LibreNMS-backed network dashboard. It aggregates devices, sites, overlays, alerts, and graphs into a single topology view with live hover details and SVG-based layout controls.
 
 ## What It Shows
 
