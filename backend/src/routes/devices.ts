@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet } from "../librenms/client.js";
-import { findDeviceIps, getOverlayPortSummaries, classifyOverlayIp } from "../librenms/overlays.js";
+import { findDeviceIps, getOverlayPortSummaries, classifyOverlayIp, classifyOverlayPort } from "../librenms/overlays.js";
 import type { DeviceOverview, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsAlert, LnmsHealthSensor } from "../librenms/types.js";
 
@@ -87,21 +87,29 @@ app.get("/:hostname/overview", async (c) => {
     routes: (() => {
       const routes = cache.get<DeviceRoute[]>(`routes:${hostname}`) ?? [];
       if (routes.length === 0) return [];
+      const overlayIps = new Set<string>();
       const samesite = new Map<string, string>();
       const overlay = new Map<string, string>();
       for (const d of devices) {
         const name = d.sysName?.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "") || d.hostname;
         const sameLoc = d.location === device.location;
-        const addIp = (ip: string) => {
-          if (classifyOverlayIp(ip)) overlay.set(ip, name);
-          else if (sameLoc) samesite.set(ip, name);
-        };
-        addIp(d.ip);
-        for (const ip of cache.get<LnmsDeviceIp[]>(`ips:${d.hostname}`) ?? []) addIp(ip.ipv4_address);
+        const dPorts = cache.get<LnmsPort[]>(`ports:${d.hostname}`) ?? [];
+        const overlayPortIds = new Set(dPorts.filter((p) => classifyOverlayPort(p)).map((p) => p.port_id));
+        const dIps = cache.get<LnmsDeviceIp[]>(`ips:${d.hostname}`) ?? [];
+        for (const ip of dIps) {
+          if (overlayPortIds.has(ip.port_id) || classifyOverlayIp(ip.ipv4_address)) {
+            overlayIps.add(ip.ipv4_address);
+            overlay.set(ip.ipv4_address, name);
+          } else if (sameLoc) {
+            samesite.set(ip.ipv4_address, name);
+          }
+        }
+        if (classifyOverlayIp(d.ip)) { overlayIps.add(d.ip); overlay.set(d.ip, name); }
+        else if (sameLoc) samesite.set(d.ip, name);
       }
       return routes.map((r) => ({
         ...r,
-        nextHopDevice: classifyOverlayIp(r.nextHop) ? overlay.get(r.nextHop) : samesite.get(r.nextHop),
+        nextHopDevice: overlayIps.has(r.nextHop) ? overlay.get(r.nextHop) : samesite.get(r.nextHop),
       }));
     })(),
     alerts: deviceAlerts.map((a) => ({
