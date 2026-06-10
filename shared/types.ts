@@ -161,6 +161,7 @@ export interface TopologyResponse {
   arpDevices: ArpDiscoveredDevice[];
   alerts: Alert[];
   lastUpdated: string;
+  commitSha?: string;
 }
 
 export interface DeviceOverview {
