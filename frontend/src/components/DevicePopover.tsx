@@ -1,6 +1,6 @@
 import { Component } from "react";
 import type { ReactNode } from "react";
-import type { HealthSensor, Port, Alert } from "@librenms-dash/shared";
+import type { HealthSensor, Port, Alert, DeviceRoute } from "@librenms-dash/shared";
 import { useDeviceDetail } from "@/hooks/useDeviceDetail";
 import { graphUrl } from "@/lib/api";
 import { formatRate } from "@/lib/format";
@@ -181,6 +181,35 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
                       <td className="py-1 px-2 truncate text-gray-300 max-w-[200px]">{p.ifName}{p.ifAlias && p.ifAlias !== p.ifName ? ` (${p.ifAlias})` : ""}</td>
                       <td className="py-1 px-2 text-right font-mono whitespace-nowrap text-green-400">↓{formatRate(p.ifInOctets_rate)}</td>
                       <td className="py-1 px-2 text-right font-mono whitespace-nowrap text-blue-400">↑{formatRate(p.ifOutOctets_rate)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {data.routes.length > 0 && (
+            <div className="mt-3">
+              <div className="text-xs text-gray-400 mb-1 font-semibold">Routes</div>
+              <table className="w-full text-xs border-collapse rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <thead>
+                  <tr style={{ background: "rgba(255,255,255,0.06)" }}>
+                    <th className="py-1 px-1.5 text-left text-gray-400 font-semibold">Dst/Mask</th>
+                    <th className="py-1 px-1.5 text-left text-gray-400 font-semibold">Next Hop</th>
+                    <th className="py-1 px-1.5 text-left text-gray-400 font-semibold">Iface</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.routes.map((r: DeviceRoute, i: number) => (
+                    <tr key={`${r.dest}-${r.prefix}-${r.nextHop}`} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
+                      <td className="py-0.5 px-1.5 font-mono text-gray-300 whitespace-nowrap">{r.dest}/{r.prefix}</td>
+                      <td className="py-0.5 px-1.5 font-mono">
+                        <span className="text-gray-300">{r.nextHop}</span>
+                        {r.nextHopDevice && (
+                          <div className="text-[10px] text-cyan-400 leading-tight">{r.nextHopDevice}</div>
+                        )}
+                      </td>
+                      <td className="py-0.5 px-1.5 text-gray-400 truncate max-w-[90px]">{r.iface}</td>
                     </tr>
                   ))}
                 </tbody>

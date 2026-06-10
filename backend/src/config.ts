@@ -6,6 +6,8 @@ config({ path: resolve(import.meta.dirname, "../../.env") });
 
 export const LIBRENMS_URL = process.env.LIBRENMS_URL ?? "https://librenms.local.lan";
 export const LIBRENMS_TOKEN = process.env.LIBRENMS_TOKEN ?? "";
+export const LIBRENMS_USER = process.env.LIBRENMS_USER ?? "";
+export const LIBRENMS_PASS = process.env.LIBRENMS_PASS ?? "";
 export const PORT = Number(process.env.PORT ?? 3001);
 export const AUTH_USERNAME = process.env.AUTH_USERNAME ?? "";
 export const AUTH_PASSWORD = process.env.AUTH_PASSWORD ?? "";

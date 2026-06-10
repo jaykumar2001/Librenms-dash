@@ -48,4 +48,5 @@ export const TTL = {
   ALERTS: 2 * 60 * 1000,         // 2 min
   HEALTH: 5 * 60 * 1000,         // 5 min
   GRAPH_PNG: 5 * 60 * 1000,      // 5 min
+  ROUTES: 15 * 60 * 1000,        // 15 min (routes change only during LibreNMS discovery)
 } as const;
