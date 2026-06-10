@@ -8,6 +8,7 @@ LibreNMS-Dash is a LibreNMS-backed network dashboard. It aggregates devices, sit
 - Overlay links for ZeroTier, WireGuard, and Tailscale
 - LLDP/CDP neighbor links
 - ARP-derived links, filtered to same-location devices
+- Per-device IPv4 routing tables (next-hop, destination, interface)
 - Device hover popovers with traffic and health graphs
 - Drag, snap, resize, and orientation controls for site boxes
 <img width="1506" height="738" alt="Librenms-Dash" src="https://github.com/user-attachments/assets/d46b4d37-1ac9-44b1-adfb-a6fe19c2f208" />
@@ -32,6 +33,8 @@ The backend reads:
 ```bash
 LIBRENMS_URL=https://librenms.local.lan
 LIBRENMS_TOKEN=<token>
+LIBRENMS_USER=<username>   # optional — enables route table polling
+LIBRENMS_PASS=<password>   # optional — enables route table polling
 PORT=3001
 NODE_ENV=development
 ```
@@ -44,6 +47,12 @@ No subnets are hard-coded. Overlay address ranges and ARP exclusions are configu
 
 - `ZEROTIER_SUBNETS`, `WIREGUARD_SUBNETS`, `TAILSCALE_SUBNETS` — comma-separated CIDRs used to recognise overlay addresses by IP. Interface-name detection (`zt*`/`wg*`/`tailscale*`) always works regardless. Tailscale defaults to its standard CGNAT block (`100.64.0.0/10`).
 - `ARP_EXCLUDED_SUBNETS` — comma-separated CIDRs to ignore when scanning ARP tables (in addition to the overlay subnets). Defaults to loopback and link-local.
+
+### Route table polling
+
+Setting `LIBRENMS_USER` and `LIBRENMS_PASS` enables per-device IPv4 routing table collection. The backend authenticates to the LibreNMS web UI and fetches route data (destination, prefix, next-hop, interface, protocol) for each monitored device. Only remote routes with real next-hops are included.
+
+If the credentials are missing or invalid, route polling is silently disabled with a single log line — no other features are affected.
 
 ## Local Development
 
@@ -112,7 +121,7 @@ The backend exposes:
 
 `GET /api/topology` is the main payload for the map. It includes:
 
-- sites
+- sites (each device includes an optional `routes` array when route polling is enabled)
 - overlay links
 - LLDP/CDP neighbor links
 - ARP links

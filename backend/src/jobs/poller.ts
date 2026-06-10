@@ -4,8 +4,9 @@ import { buildOverlayLinks } from "../librenms/overlays.js";
 import { loadOuiDatabases, lookupVendor, normalizeMac } from "../librenms/oui.js";
 import { makeCidrMatcher } from "../librenms/cidr.js";
 import { ARP_EXCLUDED_SUBNETS, OVERLAY_SUBNETS } from "../config.js";
+import { initWebSession, isWebClientEnabled, fetchRoutes, extractIfaceName, extractNextHop, stripHtml } from "../librenms/web-client.js";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsLocation, LnmsAlert, LnmsLink, LnmsArpEntry } from "../librenms/types.js";
-import type { ArpLink, ArpDiscoveredDevice } from "@librenms-dash/shared";
+import type { ArpLink, ArpDiscoveredDevice, DeviceRoute } from "@librenms-dash/shared";
 
 const STAGGER_MS = 200;
 
@@ -421,6 +422,53 @@ function isLocallyAdministered(mac: string): boolean {
   return (firstByte & 0x02) !== 0;
 }
 
+export async function pollRoutes() {
+  if (!isWebClientEnabled()) return;
+
+  const devices = cache.get<LnmsDevice[]>("devices");
+  if (!devices) return;
+
+  let totalRoutes = 0;
+  let devicesWithRoutes = 0;
+
+  for (const device of devices) {
+    if (device.status !== 1) continue;
+    try {
+      const rawRoutes = await fetchRoutes(device.device_id);
+      if (!isWebClientEnabled()) return;
+
+      const routes: DeviceRoute[] = [];
+      for (const r of rawRoutes) {
+        if (r.inetCidrRouteDestType !== "ipv4") continue;
+        if (r.inetCidrRouteType !== "remote") continue;
+
+        const nextHop = extractNextHop(r.inetCidrRouteNextHop);
+        if (!nextHop || nextHop === "hide") continue;
+
+        routes.push({
+          dest: stripHtml(r.inetCidrRouteDest),
+          prefix: parseInt(r.inetCidrRoutePfxLen, 10) || 0,
+          nextHop,
+          iface: extractIfaceName(r.inetCidrRouteIfIndex),
+          protocol: r.inetCidrRouteProto,
+          type: r.inetCidrRouteType,
+        });
+      }
+
+      if (routes.length > 0) {
+        cache.set(`routes:${device.hostname}`, routes, TTL.ROUTES);
+        totalRoutes += routes.length;
+        devicesWithRoutes++;
+      }
+    } catch {
+      // skip devices that fail
+    }
+    await delay(STAGGER_MS);
+  }
+
+  console.log(`[poller] Cached ${totalRoutes} routes across ${devicesWithRoutes} devices`);
+}
+
 export async function pollAlerts() {
   const alerts = await fetchAlerts();
   cache.set("alerts", alerts, TTL.ALERTS);
@@ -429,9 +477,11 @@ export async function pollAlerts() {
 export async function warmCache() {
   console.log("[poller] Warming cache...");
   await loadOuiDatabases();
+  await initWebSession();
   await pollDevicesAndLocations();
   await pollAlerts();
   await pollPortsAndIps();
+  await pollRoutes();
   console.log("[poller] Cache warm complete");
 }
 
@@ -452,4 +502,7 @@ export function startPoller() {
 
   // Alerts: every 2 min
   safeInterval(pollAlerts, TTL.ALERTS);
+
+  // Routes: every 5 min (same as ports)
+  safeInterval(pollRoutes, TTL.PORTS);
 }

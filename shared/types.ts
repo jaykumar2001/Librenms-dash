@@ -81,6 +81,16 @@ export interface DeviceSummary {
   totalOutRate: number;
   portCount: number;
   overlayPorts: OverlayPortSummary[];
+  routes?: DeviceRoute[];
+}
+
+export interface DeviceRoute {
+  dest: string;
+  prefix: number;
+  nextHop: string;
+  iface: string;
+  protocol: string;
+  type: string;
 }
 
 export interface OverlayPortSummary {

@@ -17,6 +17,8 @@ services:
       - TAILSCALE_SUBNETS=${TAILSCALE_SUBNETS:-}
       - ARP_EXCLUDED_SUBNETS=${ARP_EXCLUDED_SUBNETS:-}
       - DOCKER_SUBNETS=${DOCKER_SUBNETS:-}
+      - LIBRENMS_USER=${LIBRENMS_USER:-}
+      - LIBRENMS_PASS=${LIBRENMS_PASS:-}
     # Host resolution for the LibreNMS hostname and the upstream DNS server. These
     # are ignored under network_mode: host (the container uses the host's resolver),
     # and otherwise default to harmless placeholders — set them in .env if needed.

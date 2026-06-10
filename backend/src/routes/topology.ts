@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { cache } from "../cache/store.js";
-import type { TopologyResponse, Site, DeviceSummary, OverlayGroup, NeighborLink, ArpLink, ArpDiscoveredDevice } from "@librenms-dash/shared";
+import type { TopologyResponse, Site, DeviceSummary, OverlayGroup, NeighborLink, ArpLink, ArpDiscoveredDevice, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsLocation, LnmsAlert, LnmsDeviceIp, LnmsLink } from "../librenms/types.js";
 import { getOverlayPortSummaries, findLanIp, findDeviceIps } from "../librenms/overlays.js";
 import { normalizeMac } from "../librenms/oui.js";
@@ -72,6 +72,7 @@ app.get("/", (c) => {
       totalOutRate: totalOut,
       portCount: ports.length,
       overlayPorts: getOverlayPortSummaries(ports, ips),
+      routes: cache.get<DeviceRoute[]>(`routes:${device.hostname}`) ?? undefined,
     };
 
     siteMap.get(locName)!.devices.push(summary);
