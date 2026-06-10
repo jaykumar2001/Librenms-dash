@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet } from "../librenms/client.js";
 import { findDeviceIps, getOverlayPortSummaries } from "../librenms/overlays.js";
-import type { DeviceOverview } from "@librenms-dash/shared";
+import type { DeviceOverview, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsAlert, LnmsHealthSensor } from "../librenms/types.js";
 
 const app = new Hono();
@@ -84,6 +84,21 @@ app.get("/:hostname/overview", async (c) => {
       ifAdminStatus: p.ifAdminStatus,
       ifType: p.ifType,
     })),
+    routes: (() => {
+      const routes = cache.get<DeviceRoute[]>(`routes:${hostname}`) ?? [];
+      if (routes.length === 0) return [];
+      const ipToName = new Map<string, string>();
+      for (const d of devices) {
+        ipToName.set(d.ip, d.sysName?.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "") || d.hostname);
+        const dIps = cache.get<LnmsDeviceIp[]>(`ips:${d.hostname}`) ?? [];
+        const name = d.sysName?.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "") || d.hostname;
+        for (const ip of dIps) ipToName.set(ip.ipv4_address, name);
+      }
+      return routes.map((r) => ({
+        ...r,
+        nextHopDevice: ipToName.get(r.nextHop),
+      }));
+    })(),
     alerts: deviceAlerts.map((a) => ({
       id: a.id,
       device_id: a.device_id,

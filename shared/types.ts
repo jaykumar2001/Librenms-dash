@@ -88,6 +88,7 @@ export interface DeviceRoute {
   dest: string;
   prefix: number;
   nextHop: string;
+  nextHopDevice?: string;
   iface: string;
   protocol: string;
   type: string;
@@ -167,4 +168,5 @@ export interface DeviceOverview {
   health: HealthSensor[];
   topPorts: Port[];
   alerts: Alert[];
+  routes: DeviceRoute[];
 }
