@@ -3,7 +3,7 @@ import type { MouseEvent } from "react";
 import type { TopologyResponse, DeviceSummary } from "@librenms-dash/shared";
 import { useForceLayout } from "@/hooks/useForceLayout";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
-import { useTransformPersistence, readPersistedTransform, clearPersistedTransform } from "@/hooks/usePersistedLayout";
+import { useTransformPersistence, readPersistedTransform, clearPersistedTransform, consumeFitTransformRequest } from "@/hooks/usePersistedLayout";
 import { SiteGroup, SiteControls, DeviceGroupBorder } from "./SiteGroup";
 import { OverlayLinkLine } from "./OverlayLink";
 import { HoverableLinkPath } from "./HoverableLinkPath";
@@ -39,6 +39,11 @@ function formatMac(mac: string): string {
   return clean.match(/.{2}/g)!.join(":");
 }
 
+function readViewportSize(): { width: number; height: number } {
+  if (typeof window === "undefined") return { width: 1200, height: 800 };
+  return { width: window.innerWidth, height: window.innerHeight };
+}
+
 function snapToNearby(value: number, candidates: number[]): number | null {
   let best: number | null = null;
   let bestDistance = ALIGN_SNAP_DISTANCE + 1;
@@ -65,7 +70,7 @@ export function TopologyMap({ data }: Props) {
     () => typeof window === "undefined" || !window.matchMedia ? true : window.matchMedia("(hover: hover)").matches,
     [],
   );
-  const [dimensions, setDimensions] = useState({ width: 1200, height: 800 });
+  const [dimensions, setDimensions] = useState(readViewportSize);
   const [hoveredDevice, setHoveredDevice] = useState<{ hostname: string; x: number; y: number; icon: string } | null>(null);
   // Device shown in the mobile bottom sheet (touch devices only).
   const [infoDevice, setInfoDevice] = useState<{ hostname: string; icon: string } | null>(null);
@@ -93,8 +98,12 @@ export function TopologyMap({ data }: Props) {
   const alertDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertTooltipHovered = useRef(false);
 
+  // After login, fit to screen instead of restoring a saved zoom/pan.
+  const useFitTransformRef = useRef(consumeFitTransformRequest());
   // Seed viewport transform from localStorage on first render, then persist changes.
-  const restoredTransformRef = useRef(readPersistedTransform());
+  const restoredTransformRef = useRef(
+    useFitTransformRef.current ? null : readPersistedTransform(),
+  );
   const [transform, setTransform] = useState(() => restoredTransformRef.current ?? { x: 0, y: 0, scale: 1 });
   const lastInitialScaleRef = useRef(1);
   // When a transform was restored from localStorage, don't let auto-fit override
@@ -131,10 +140,12 @@ export function TopologyMap({ data }: Props) {
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    const ro = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect;
-      setDimensions({ width, height });
-    });
+    const update = () => {
+      const { width, height } = el.getBoundingClientRect();
+      if (width > 0 && height > 0) setDimensions({ width, height });
+    };
+    update();
+    const ro = new ResizeObserver(update);
     ro.observe(el);
     return () => ro.disconnect();
   }, []);

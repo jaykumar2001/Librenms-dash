@@ -9,6 +9,8 @@ export const LIBRENMS_TOKEN = process.env.LIBRENMS_TOKEN ?? "";
 export const LIBRENMS_USER = process.env.LIBRENMS_USER ?? "";
 export const LIBRENMS_PASS = process.env.LIBRENMS_PASS ?? "";
 export const PORT = Number(process.env.PORT ?? 3001);
+export const AUTH_USERNAME = process.env.AUTH_USERNAME ?? "";
+export const AUTH_PASSWORD = process.env.AUTH_PASSWORD ?? "";
 
 // Parse a comma-separated CIDR list from the environment; falls back when unset/empty.
 function parseSubnetList(env: string | undefined, fallback: string[] = []): string[] {
@@ -51,4 +53,8 @@ if (LIBRENMS_URL.startsWith("https://")) {
 
 if (!LIBRENMS_TOKEN) {
   throw new Error("LIBRENMS_TOKEN is required in .env");
+}
+
+if (!AUTH_USERNAME || !AUTH_PASSWORD) {
+  throw new Error("AUTH_USERNAME and AUTH_PASSWORD are required in .env");
 }

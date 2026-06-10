@@ -3,7 +3,8 @@ import type { TopologyResponse, DeviceOverview } from "@librenms-dash/shared";
 const BASE = "/api";
 
 async function get<T>(path: string): Promise<T> {
-  const res = await fetch(`${BASE}${path}`);
+  const res = await fetch(`${BASE}${path}`, { credentials: "include" });
+  if (res.status === 401) throw new Error("Unauthorized");
   if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
   return res.json();
 }
