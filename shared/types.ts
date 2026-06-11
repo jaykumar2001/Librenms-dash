@@ -171,3 +171,11 @@ export interface DeviceOverview {
   alerts: Alert[];
   routes: DeviceRoute[];
 }
+
+export interface AssetEvent {
+  id: number;
+  timestamp: string;
+  action: "added" | "removed";
+  category: string;
+  asset: string;
+}

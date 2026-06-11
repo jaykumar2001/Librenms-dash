@@ -13,6 +13,7 @@ import { DevicePopover } from "./DevicePopover";
 import { LinkTooltip, type LinkTooltipData } from "./LinkTooltip";
 import { curvedLinkPath, pointToPointPath, computeDominantSide, DEVICE_HALF, ARP_HALF, type Side } from "@/lib/linkGeometry";
 import { Logo } from "./Logo";
+import { AssetEventToast } from "./AssetEventToast";
 
 interface Props {
   data: TopologyResponse;
@@ -1186,6 +1187,9 @@ export function TopologyMap({ data }: Props) {
       <div className="absolute top-4 right-4 z-10 pointer-events-none">
         <Logo size={48} />
       </div>
+
+      {/* Asset change toasts — above copyright bar */}
+      <AssetEventToast />
 
       {/* Bottom-right: GPLv3 copyright, GitHub link, commit SHA */}
       <div className="absolute bottom-2 right-2 z-10 pointer-events-auto flex items-center gap-2 text-[10px] text-gray-500">
