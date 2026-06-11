@@ -30,7 +30,7 @@ export const OVERLAY_SUBNETS: Record<OverlayType, string[]> = {
 
 // Docker bridge subnets — containers on these ranges are excluded from ARP
 // discovery. Defaults to the standard Docker bridge pool (172.16.0.0/12).
-export const DOCKER_SUBNETS = parseSubnetList(process.env.DOCKER_SUBNETS, ["172.16.0.0/12"]);
+export const DOCKER_SUBNETS = parseSubnetList(process.env.DOCKER_SUBNETS, ["172.17.0.0/16"]);
 
 // Extra prefixes treated as infrastructure / non-discoverable when scanning ARP
 // tables (in addition to the overlay subnets above). Defaults to loopback and

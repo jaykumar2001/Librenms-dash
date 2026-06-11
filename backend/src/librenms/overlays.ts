@@ -195,7 +195,7 @@ export function findLanIp(deviceIp: string, ips: LnmsDeviceIp[]): string {
 }
 
 const OVERLAY_IFACE_RE = /^(zt|wg|tailscale|docker)/i;
-const DOCKER_IFACE_RE = /^(br-|docker|veth)/i;
+const DOCKER_IFACE_RE = /^(br-[0-9a-f]{6,}|docker|veth)/i;
 const isDockerIp = makeCidrMatcher(DOCKER_SUBNETS);
 
 function isExcludedIface(ifName: string): boolean {
