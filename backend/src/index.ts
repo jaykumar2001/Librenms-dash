@@ -10,6 +10,7 @@ import deviceRoutes from "./routes/devices.js";
 import graphRoutes from "./routes/graphs.js";
 import portRoutes from "./routes/ports.js";
 import authRoutes from "./routes/auth.js";
+import eventRoutes from "./routes/events.js";
 import { requireAuth } from "./middleware/auth.js";
 
 const app = new Hono();
@@ -44,6 +45,7 @@ app.route("/api/topology", topologyRoutes);
 app.route("/api/devices", deviceRoutes);
 app.route("/api/graph", graphRoutes);
 app.route("/api/ports", portRoutes);
+app.route("/api/events", eventRoutes);
 
 if (process.env.NODE_ENV === "production") {
   app.use("/*", serveStatic({ root: "./frontend/dist" }));
