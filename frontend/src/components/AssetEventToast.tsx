@@ -127,12 +127,25 @@ export function AssetEventToast() {
     });
   }, []);
 
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!panelOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setPanelOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [panelOpen]);
+
   // Pagination
   const reversed = useMemo(() => [...allEvents].reverse(), [allEvents]);
   const totalPages = Math.max(1, Math.ceil(reversed.length / PAGE_SIZE));
   const pageEvents = useMemo(() => reversed.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE), [reversed, page]);
 
   const lastEvent = allEvents.length > 0 ? allEvents[allEvents.length - 1] : null;
+  const recentEvent = lastEvent && (Date.now() - new Date(lastEvent.timestamp).getTime() < 5 * 60 * 1000) ? lastEvent : null;
 
   return (
     <>
@@ -164,7 +177,7 @@ export function AssetEventToast() {
       )}
 
       {/* Bar + panel wrapper — single column anchored at bottom-right */}
-      <div className="absolute bottom-7 right-2 z-20 flex flex-col items-end">
+      <div ref={wrapperRef} className="absolute bottom-7 right-2 z-20 flex flex-col items-end">
         {/* Expanded event log panel — grows upward from bar */}
         <div
           className={`w-[500px] transition-all duration-300 ease-out origin-bottom overflow-hidden ${
@@ -240,10 +253,10 @@ export function AssetEventToast() {
         >
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${connected ? "bg-emerald-500" : "bg-gray-600"}`} />
           <span className="text-gray-400">
-            {allEvents.length === 0
-              ? "No events"
-              : lastEvent
-                ? <><span className="capitalize">{lastEvent.category}</span> <span className={eventColor(lastEvent.action)}>{lastEvent.action}</span></>
+            {recentEvent
+              ? <><span className="capitalize">{recentEvent.category}</span> <span className={eventColor(recentEvent.action)}>{recentEvent.action}</span></>
+              : allEvents.length === 0
+                ? "No events"
                 : `${allEvents.length} events`
             }
           </span>
