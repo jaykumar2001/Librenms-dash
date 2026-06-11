@@ -41,10 +41,17 @@ const assetBaseline = new Set<string>();
 let eventSeq = 0;
 const MAX_EVENTS = 200;
 
+type EventListener = (events: AssetEvent[]) => void;
+const sseListeners = new Set<EventListener>();
+
+export function subscribeEvents(fn: EventListener) { sseListeners.add(fn); }
+export function unsubscribeEvents(fn: EventListener) { sseListeners.delete(fn); }
+
 function pushEvents(events: AssetEvent[]) {
   if (events.length === 0) return;
   const existing = cache.get<AssetEvent[]>("assetEvents") ?? [];
   cache.set("assetEvents", [...existing, ...events].slice(-MAX_EVENTS), 60 * 60 * 1000);
+  for (const fn of sseListeners) fn(events);
 }
 
 function diffAndLog(category: string, prev: Set<string>, curr: Set<string>): Set<string> {

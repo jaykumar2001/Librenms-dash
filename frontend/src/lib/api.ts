@@ -1,4 +1,4 @@
-import type { TopologyResponse, DeviceOverview, AssetEvent } from "@librenms-dash/shared";
+import type { TopologyResponse, DeviceOverview } from "@librenms-dash/shared";
 
 const BASE = "/api";
 
@@ -24,10 +24,6 @@ export function graphUrl(hostname: string, type: string, opts?: { from?: string;
     height: String(opts?.height ?? 150),
   });
   return `${BASE}/graph/device/${hostname}/${type}?${params}`;
-}
-
-export function fetchEvents(since: number): Promise<{ events: AssetEvent[] }> {
-  return get(`/events?since=${since}`);
 }
 
 export function iconUrl(icon: string): string {
