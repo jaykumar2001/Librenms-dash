@@ -1,9 +1,9 @@
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet, delay } from "../librenms/client.js";
-import { buildOverlayLinks } from "../librenms/overlays.js";
+import { buildOverlayLinks, engine } from "../librenms/overlays.js";
 import { loadOuiDatabases, lookupVendor, normalizeMac } from "../librenms/oui.js";
 import { makeCidrMatcher } from "../librenms/cidr.js";
-import { ARP_EXCLUDED_SUBNETS, OVERLAY_SUBNETS } from "../config.js";
+import { ARP_EXCLUDED_SUBNETS, OVERLAY_SUBNET_LIST } from "../config.js";
 import { initWebSession, isWebClientEnabled, fetchRoutes, extractIfaceName, extractNextHop, stripHtml } from "../librenms/web-client.js";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsLocation, LnmsAlert, LnmsLink, LnmsArpEntry } from "../librenms/types.js";
 import type { ArpLink, ArpDiscoveredDevice, DeviceRoute, AssetEvent } from "@librenms-dash/shared";
@@ -19,7 +19,7 @@ const DEVICE_POLL_MS = 5 * 60 * 1000;
 // plus excluded infrastructure ranges (loopback, link-local, Docker, …).
 const isExcludedArpIp = makeCidrMatcher([
   ...ARP_EXCLUDED_SUBNETS,
-  ...Object.values(OVERLAY_SUBNETS).flat(),
+  ...OVERLAY_SUBNET_LIST,
 ]);
 
 // --- Asset change detection ---
@@ -151,7 +151,7 @@ export async function pollPortsAndIps() {
 
   const overlays = buildOverlayLinks(allPorts, allIps);
   cache.set("overlays", overlays, TTL.PORTS);
-  console.log(`[poller] Cached overlays: ${overlays.map((o) => `${o.type}(${o.links.length} links)`).join(", ")}`);
+  console.log(`[poller] Cached overlays: ${overlays.map((o) => `${o.overlayType}(${o.links.length} links)`).join(", ")}`);
 
   const currPorts = new Set<string>();
   const currIps = new Set<string>();
@@ -166,7 +166,7 @@ export async function pollPortsAndIps() {
 
   const currOverlays = new Set<string>();
   for (const g of overlays) {
-    for (const l of g.links) currOverlays.add(`${g.type} ${l.from}<>${l.to}`);
+    for (const l of g.links) currOverlays.add(`${g.overlayType} ${l.from}<>${l.to}`);
   }
   prevAssets.overlayLinks = diffAndLog("overlay-link", prevAssets.overlayLinks, currOverlays);
 

@@ -1,7 +1,7 @@
 // Minimal IPv4 CIDR matching, used to recognise overlay/infrastructure address
 // ranges that are supplied via configuration rather than hard-coded.
 
-function ipToInt(ip: string): number | null {
+export function ipToInt(ip: string): number | null {
   const parts = ip.split(".");
   if (parts.length !== 4) return null;
   let n = 0;
@@ -39,4 +39,17 @@ export function makeCidrMatcher(cidrs: string[]): (ip: string | undefined | null
     if (n === null) return false;
     return ranges.some((r) => ((n & r.mask) >>> 0) === r.base);
   };
+}
+
+export function computeSubnet(ip: string, prefixLen: number): string | null {
+  const n = ipToInt(ip);
+  if (n === null) return null;
+  if (prefixLen < 0 || prefixLen > 32) return null;
+  const mask = prefixLen === 0 ? 0 : (0xffffffff << (32 - prefixLen)) >>> 0;
+  const base = (n & mask) >>> 0;
+  const a = (base >>> 24) & 0xff;
+  const b = (base >>> 16) & 0xff;
+  const c = (base >>> 8) & 0xff;
+  const d = base & 0xff;
+  return `${a}.${b}.${c}.${d}/${prefixLen}`;
 }

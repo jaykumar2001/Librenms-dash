@@ -1,6 +1,5 @@
 import { config } from "dotenv";
 import { resolve } from "path";
-import type { OverlayType } from "@librenms-dash/shared";
 
 config({ path: resolve(import.meta.dirname, "../../.env") });
 
@@ -12,21 +11,36 @@ export const PORT = Number(process.env.PORT ?? 3001);
 export const AUTH_USERNAME = process.env.AUTH_USERNAME ?? "";
 export const AUTH_PASSWORD = process.env.AUTH_PASSWORD ?? "";
 
-// Parse a comma-separated CIDR list from the environment; falls back when unset/empty.
 function parseSubnetList(env: string | undefined, fallback: string[] = []): string[] {
   if (!env) return fallback;
   return env.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-// Overlay networks, configured per deployment so no specific subnets are baked in.
-// Interface-name detection (zt*/wg*/tailscale*) always applies; these CIDRs add
-// IP-based recognition of overlay addresses. Tailscale defaults to its standard
-// CGNAT block (100.64.0.0/10); ZeroTier/WireGuard have no universal default.
-export const OVERLAY_SUBNETS: Record<OverlayType, string[]> = {
-  zerotier: parseSubnetList(process.env.ZEROTIER_SUBNETS),
-  wireguard: parseSubnetList(process.env.WIREGUARD_SUBNETS),
-  tailscale: parseSubnetList(process.env.TAILSCALE_SUBNETS, ["100.64.0.0/10"]),
-};
+function buildOverlayExtra(): string {
+  const parts: string[] = [];
+  if (process.env.OVERLAY_EXTRA) parts.push(process.env.OVERLAY_EXTRA);
+
+  const legacy: Array<[string, string, string[]]> = [
+    ["zerotier", "ZEROTIER_SUBNETS", []],
+    ["wireguard", "WIREGUARD_SUBNETS", []],
+    ["tailscale", "TAILSCALE_SUBNETS", ["100.64.0.0/10"]],
+  ];
+  for (const [type, envKey, fallback] of legacy) {
+    const subnets = parseSubnetList(process.env[envKey], fallback);
+    for (const s of subnets) parts.push(`${type}:${s}`);
+  }
+  return parts.join(",");
+}
+
+export const OVERLAY_EXTRA = buildOverlayExtra();
+export const OVERLAY_RECLASSIFY = process.env.OVERLAY_RECLASSIFY ?? "wg@100.64.0.0/10:tailscale";
+export const OVERLAY_TOPOLOGY = process.env.OVERLAY_TOPOLOGY ?? "";
+export const OVERLAY_HUB = process.env.OVERLAY_HUB ?? "";
+
+export const OVERLAY_SUBNET_LIST: string[] = buildOverlayExtra()
+  .split(",")
+  .map((e) => { const m = e.trim().match(/^\w+:(.+)$/); return m?.[1] ?? ""; })
+  .filter(Boolean);
 
 // Docker bridge subnets — containers on these ranges are excluded from ARP
 // discovery. Defaults to the standard Docker bridge pool (172.16.0.0/12).
