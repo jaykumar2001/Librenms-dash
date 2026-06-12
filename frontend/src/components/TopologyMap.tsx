@@ -25,6 +25,11 @@ const LINK_HOVER_DELAY = 1000;
 
 const NEIGHBOR_COLOR = "#38bdf8";
 const ARP_COLOR = "#fbbf24";
+const OVERLAY_PALETTE = [
+  "#a78bfa", "#f472b6", "#34d399", "#fbbf24",
+  "#60a5fa", "#fb923c", "#2dd4bf", "#c084fc",
+  "#f87171", "#4ade80", "#38bdf8", "#e879f9",
+];
 
 function snapValue(value: number): number {
   return Math.round(value / GRID_SIZE) * GRID_SIZE;
@@ -217,7 +222,24 @@ export function TopologyMap({ data }: Props) {
     return map;
   }, [nodes]);
 
-  const visibleLinks = links.filter((l) => !hiddenOverlays[l.overlayType]);
+  const overlayColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let i = 0; i < (data?.overlays ?? []).length; i++) {
+      const o = data!.overlays[i];
+      map.set(`${o.overlayType}:${o.subnet}`, OVERLAY_PALETTE[i % OVERLAY_PALETTE.length]);
+    }
+    return map;
+  }, [data]);
+
+  const visibleLinks = useMemo(() =>
+    links
+      .filter((l) => !hiddenOverlays[l.overlayKey])
+      .map((l) => {
+        const c = overlayColorMap.get(l.overlayKey);
+        return c && c !== l.color ? { ...l, color: c } : l;
+      }),
+    [links, hiddenOverlays, overlayColorMap],
+  );
 
   // Pre-compute a single anchor side per device based on all its visible peers.
   const deviceSide = useMemo(() => {
@@ -705,19 +727,21 @@ export function TopologyMap({ data }: Props) {
         </span>
         <span className="text-gray-600">|</span>
         <span className="text-xs text-gray-400 font-semibold mr-2">Overlays:</span>
-        {data.overlays.map((o) => {
-          const visible = !hiddenOverlays[o.overlayType];
+        {data.overlays.map((o, i) => {
+          const key = `${o.overlayType}:${o.subnet}`;
+          const color = OVERLAY_PALETTE[i % OVERLAY_PALETTE.length];
+          const visible = !hiddenOverlays[key];
           return (
             <button
-              key={`${o.overlayType}:${o.subnet}`}
-              onClick={() => toggleOverlay(o.overlayType)}
+              key={key}
+              onClick={() => toggleOverlay(key)}
               className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
                 visible ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-500"
               }`}
             >
               <span
                 className="w-3 h-0.5 inline-block rounded"
-                style={{ backgroundColor: o.color, opacity: visible ? 1 : 0.3 }}
+                style={{ backgroundColor: color, opacity: visible ? 1 : 0.3 }}
               />
               {o.label} ({o.links.length}){o.hub ? " ⭐" : ""}
             </button>
