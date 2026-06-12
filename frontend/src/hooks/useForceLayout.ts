@@ -353,7 +353,7 @@ function layoutAll(
         links.push({
           source: src,
           target: tgt,
-          overlayType: overlay.type,
+          overlayType: overlay.overlayType,
           color: overlay.color,
           fromIp: link.fromIp,
           toIp: link.toIp,

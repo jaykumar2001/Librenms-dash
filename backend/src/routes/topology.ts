@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { execSync } from "node:child_process";
 import { cache } from "../cache/store.js";
-import type { TopologyResponse, Site, DeviceSummary, OverlayGroup, NeighborLink, ArpLink, ArpDiscoveredDevice, DeviceRoute } from "@librenms-dash/shared";
+import type { TopologyResponse, Site, DeviceSummary, SubnetGroup, NeighborLink, ArpLink, ArpDiscoveredDevice, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsLocation, LnmsAlert, LnmsDeviceIp, LnmsLink } from "../librenms/types.js";
 import { getOverlayPortSummaries, findLanIp, findDeviceIps } from "../librenms/overlays.js";
 import { normalizeMac } from "../librenms/oui.js";
@@ -22,7 +22,7 @@ function deriveDisplayName(device: LnmsDevice): string {
 app.get("/", (c) => {
   const devices = cache.get<LnmsDevice[]>("devices") ?? [];
   const locations = cache.get<LnmsLocation[]>("locations") ?? [];
-  const overlays = cache.get<OverlayGroup[]>("overlays") ?? [];
+  const overlays = cache.get<SubnetGroup[]>("overlays") ?? [];
   const alerts = cache.get<LnmsAlert[]>("alerts") ?? [];
   const lnmsLinks = cache.get<LnmsLink[]>("links") ?? [];
 

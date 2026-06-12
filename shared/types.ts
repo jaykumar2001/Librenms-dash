@@ -32,7 +32,7 @@ export interface Port {
   ifOperStatus: string;
   ifAdminStatus: string;
   ifType: string;
-  overlayType?: OverlayType;
+  overlayType?: string;
 }
 
 export interface HealthSensor {
@@ -96,17 +96,16 @@ export interface DeviceRoute {
 
 export interface OverlayPortSummary {
   ifName: string;
-  overlayType: OverlayType;
+  overlayType: string;
   ip: string;
   ifInOctets_rate: number;
   ifOutOctets_rate: number;
   ifOperStatus: string;
 }
 
-export type OverlayType = "zerotier" | "wireguard" | "tailscale";
-
 export interface OverlayLink {
-  type: OverlayType;
+  overlayType: string;
+  subnet: string;
   from: string;
   to: string;
   fromIp: string;
@@ -115,10 +114,13 @@ export interface OverlayLink {
   toIface?: string;
 }
 
-export interface OverlayGroup {
-  type: OverlayType;
+export interface SubnetGroup {
+  overlayType: string;
   subnet: string;
   color: string;
+  label: string;
+  topology: "mesh" | "hub-spoke";
+  hub?: string;
   links: OverlayLink[];
 }
 
@@ -155,7 +157,7 @@ export interface ArpDiscoveredDevice {
 
 export interface TopologyResponse {
   sites: Site[];
-  overlays: OverlayGroup[];
+  overlays: SubnetGroup[];
   neighbors: NeighborLink[];
   arpLinks: ArpLink[];
   arpDevices: ArpDiscoveredDevice[];

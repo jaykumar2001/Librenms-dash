@@ -25,11 +25,6 @@ const LINK_HOVER_DELAY = 1000;
 
 const NEIGHBOR_COLOR = "#38bdf8";
 const ARP_COLOR = "#fbbf24";
-const OVERLAY_COLORS: Record<string, string> = {
-  zerotier: "#a855f7",
-  wireguard: "#f87171",
-  tailscale: "#22d3ee",
-};
 
 function snapValue(value: number): number {
   return Math.round(value / GRID_SIZE) * GRID_SIZE;
@@ -83,8 +78,8 @@ export function TopologyMap({ data }: Props) {
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
   // ── Persistent filter / toggle state ────────────────────────────────────────
   const [hiddenOverlays, setHiddenOverlays] = useLocalStorage<Record<string, boolean>>(
-    "librenms-dash:hiddenOverlays:v1",
-    { zerotier: true, wireguard: true, tailscale: true },
+    "librenms-dash:hiddenOverlays:v2",
+    {},
   );
   const [showNeighbors, setShowNeighbors] = useLocalStorage("librenms-dash:showNeighbors:v1", false);
   const [showArp, setShowArp] = useLocalStorage("librenms-dash:showArp:v1", false);
@@ -711,21 +706,20 @@ export function TopologyMap({ data }: Props) {
         <span className="text-gray-600">|</span>
         <span className="text-xs text-gray-400 font-semibold mr-2">Overlays:</span>
         {data.overlays.map((o) => {
-          const visible = !hiddenOverlays[o.type];
-          const color = OVERLAY_COLORS[o.type] ?? "#666";
+          const visible = !hiddenOverlays[o.overlayType];
           return (
             <button
-              key={o.type}
-              onClick={() => toggleOverlay(o.type)}
+              key={`${o.overlayType}:${o.subnet}`}
+              onClick={() => toggleOverlay(o.overlayType)}
               className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
                 visible ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-500"
               }`}
             >
               <span
                 className="w-3 h-0.5 inline-block rounded"
-                style={{ backgroundColor: color, opacity: visible ? 1 : 0.3 }}
+                style={{ backgroundColor: o.color, opacity: visible ? 1 : 0.3 }}
               />
-              {o.type} ({o.links.length})
+              {o.label} ({o.links.length}){o.hub ? " ⭐" : ""}
             </button>
           );
         })}

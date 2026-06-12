@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet } from "../librenms/client.js";
-import { findDeviceIps, getOverlayPortSummaries, classifyOverlayIp, classifyOverlayPort } from "../librenms/overlays.js";
+import { findDeviceIps, getOverlayPortSummaries, engine } from "../librenms/overlays.js";
 import type { DeviceOverview, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsAlert, LnmsHealthSensor } from "../librenms/types.js";
 
@@ -94,17 +94,17 @@ app.get("/:hostname/overview", async (c) => {
         const name = d.sysName?.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "") || d.hostname;
         const sameLoc = d.location === device.location;
         const dPorts = cache.get<LnmsPort[]>(`ports:${d.hostname}`) ?? [];
-        const overlayPortIds = new Set(dPorts.filter((p) => classifyOverlayPort(p)).map((p) => p.port_id));
+        const overlayPortIds = new Set(dPorts.filter((p) => engine.classifyPort(p)).map((p) => p.port_id));
         const dIps = cache.get<LnmsDeviceIp[]>(`ips:${d.hostname}`) ?? [];
         for (const ip of dIps) {
-          if (overlayPortIds.has(ip.port_id) || classifyOverlayIp(ip.ipv4_address)) {
+          if (overlayPortIds.has(ip.port_id) || engine.isOverlayIp(ip.ipv4_address)) {
             overlayIps.add(ip.ipv4_address);
             overlay.set(ip.ipv4_address, name);
           } else if (sameLoc) {
             samesite.set(ip.ipv4_address, name);
           }
         }
-        if (classifyOverlayIp(d.ip)) { overlayIps.add(d.ip); overlay.set(d.ip, name); }
+        if (engine.isOverlayIp(d.ip)) { overlayIps.add(d.ip); overlay.set(d.ip, name); }
         else if (sameLoc) samesite.set(d.ip, name);
       }
       return routes.map((r) => ({
