@@ -25,6 +25,11 @@ const LINK_HOVER_DELAY = 1000;
 
 const NEIGHBOR_COLOR = "#38bdf8";
 const ARP_COLOR = "#fbbf24";
+const OVERLAY_PALETTE = [
+  "#a78bfa", "#f472b6", "#34d399", "#fbbf24",
+  "#60a5fa", "#fb923c", "#2dd4bf", "#c084fc",
+  "#f87171", "#4ade80", "#38bdf8", "#e879f9",
+];
 
 function snapValue(value: number): number {
   return Math.round(value / GRID_SIZE) * GRID_SIZE;
@@ -217,7 +222,24 @@ export function TopologyMap({ data }: Props) {
     return map;
   }, [nodes]);
 
-  const visibleLinks = links.filter((l) => !hiddenOverlays[l.overlayType]);
+  const overlayColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (let i = 0; i < (data?.overlays ?? []).length; i++) {
+      const o = data!.overlays[i];
+      map.set(`${o.overlayType}:${o.subnet}`, OVERLAY_PALETTE[i % OVERLAY_PALETTE.length]);
+    }
+    return map;
+  }, [data]);
+
+  const visibleLinks = useMemo(() =>
+    links
+      .filter((l) => !hiddenOverlays[l.overlayKey])
+      .map((l) => {
+        const c = overlayColorMap.get(l.overlayKey);
+        return c && c !== l.color ? { ...l, color: c } : l;
+      }),
+    [links, hiddenOverlays, overlayColorMap],
+  );
 
   // Pre-compute a single anchor side per device based on all its visible peers.
   const deviceSide = useMemo(() => {
@@ -666,7 +688,7 @@ export function TopologyMap({ data }: Props) {
           (items-stretch) and never overlapping (justify-between; outer flex-wrap
           drops the right bar below the left on very narrow screens). The wrapper
           is pointer-transparent so panning still works in the gap between bars. */}
-      <div ref={topBarRef} className="absolute top-0 inset-x-0 z-10 p-4 flex flex-wrap items-stretch justify-between gap-3 pointer-events-none">
+      <div ref={topBarRef} className="absolute top-0 inset-x-0 z-10 p-4 flex flex-wrap items-stretch justify-between gap-3 pointer-events-none max-w-[calc(100%-72px)]">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 pointer-events-auto">
         <button
@@ -705,21 +727,29 @@ export function TopologyMap({ data }: Props) {
         </span>
         <span className="text-gray-600">|</span>
         <span className="text-xs text-gray-400 font-semibold mr-2">Overlays:</span>
-        {data.overlays.map((o) => {
-          const visible = !hiddenOverlays[o.overlayType];
+        {data.overlays.map((o, i) => {
+          const key = `${o.overlayType}:${o.subnet}`;
+          const color = OVERLAY_PALETTE[i % OVERLAY_PALETTE.length];
+          const visible = !hiddenOverlays[key];
           return (
             <button
-              key={`${o.overlayType}:${o.subnet}`}
-              onClick={() => toggleOverlay(o.overlayType)}
+              key={key}
+              onClick={() => toggleOverlay(key)}
               className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
                 visible ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-500"
               }`}
             >
               <span
-                className="w-3 h-0.5 inline-block rounded"
-                style={{ backgroundColor: o.color, opacity: visible ? 1 : 0.3 }}
+                className="w-3 h-0.5 inline-block rounded self-center"
+                style={{ backgroundColor: color, opacity: visible ? 1 : 0.3 }}
               />
-              {o.label} ({o.links.length}){o.hub ? " ⭐" : ""}
+              <span className="flex flex-col leading-tight">
+                <span>{o.label.replace(/\s*\(.*\)\s*$/, "")} ({o.links.length}){o.hub ? " ⭐" : ""}</span>
+                <span
+                  className="text-[9px] font-mono opacity-70"
+                  style={{ color: visible ? color : undefined }}
+                >{o.subnet}</span>
+              </span>
             </button>
           );
         })}

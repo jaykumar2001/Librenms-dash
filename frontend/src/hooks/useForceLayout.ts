@@ -17,6 +17,7 @@ export interface LayoutLink {
   source: LayoutNode;
   target: LayoutNode;
   overlayType: string;
+  overlayKey: string;
   color: string;
   fromIp: string;
   toIp: string;
@@ -354,6 +355,7 @@ function layoutAll(
           source: src,
           target: tgt,
           overlayType: overlay.overlayType,
+          overlayKey: `${overlay.overlayType}:${overlay.subnet}`,
           color: overlay.color,
           fromIp: link.fromIp,
           toIp: link.toIp,
