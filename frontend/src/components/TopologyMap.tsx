@@ -688,7 +688,7 @@ export function TopologyMap({ data }: Props) {
           (items-stretch) and never overlapping (justify-between; outer flex-wrap
           drops the right bar below the left on very narrow screens). The wrapper
           is pointer-transparent so panning still works in the gap between bars. */}
-      <div ref={topBarRef} className="absolute top-0 inset-x-0 z-10 p-4 flex flex-wrap items-stretch justify-between gap-3 pointer-events-none">
+      <div ref={topBarRef} className="absolute top-0 inset-x-0 z-10 p-4 flex flex-wrap items-stretch justify-between gap-3 pointer-events-none max-w-[calc(100%-72px)]">
       {/* Controls */}
       <div className="flex flex-wrap items-center gap-3 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 pointer-events-auto">
         <button
@@ -740,10 +740,16 @@ export function TopologyMap({ data }: Props) {
               }`}
             >
               <span
-                className="w-3 h-0.5 inline-block rounded"
+                className="w-3 h-0.5 inline-block rounded self-center"
                 style={{ backgroundColor: color, opacity: visible ? 1 : 0.3 }}
               />
-              {o.label} ({o.links.length}){o.hub ? " ⭐" : ""}
+              <span className="flex flex-col leading-tight">
+                <span>{o.label.replace(/\s*\(.*\)\s*$/, "")} ({o.links.length}){o.hub ? " ⭐" : ""}</span>
+                <span
+                  className="text-[9px] font-mono opacity-70"
+                  style={{ color: visible ? color : undefined }}
+                >{o.subnet}</span>
+              </span>
             </button>
           );
         })}

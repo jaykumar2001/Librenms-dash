@@ -24,6 +24,15 @@ export function anchorPointForSide(
   }
 }
 
+function sideNormal(side: Side): { x: number; y: number } {
+  switch (side) {
+    case "left": return { x: -1, y: 0 };
+    case "right": return { x: 1, y: 0 };
+    case "top": return { x: 0, y: -1 };
+    case "bottom": return { x: 0, y: 1 };
+  }
+}
+
 /**
  * Given a device center and all its peer centers, pick the single side
  * that faces the most peers. Ties broken by: right > bottom > left > top.
@@ -55,6 +64,47 @@ export function computeDominantSide(
   return best;
 }
 
+function computeControlPointOffset(
+  anchor: { x: number; y: number },
+  target: { x: number; y: number },
+  side: Side,
+  half: HalfDims,
+): number {
+  const n = sideNormal(side);
+  const toTarget = { x: target.x - anchor.x, y: target.y - anchor.y };
+  const dot = toTarget.x * n.x + toTarget.y * n.y;
+  const dist = Math.sqrt(toTarget.x * toTarget.x + toTarget.y * toTarget.y) || 1;
+  // dot < 0 means the target is behind the exit direction (opposite side)
+  // Scale offset: minimum clearance of the box dimension, more for opposite-side targets
+  const minOffset = Math.max(half.halfW, half.halfH) + 20;
+  if (dot >= 0) {
+    return Math.max(minOffset, dist * 0.35);
+  }
+  // Target is behind — need a wide swing to clear the box
+  return Math.max(minOffset * 1.5, dist * 0.5);
+}
+
+function cubicPath(
+  sx: number, sy: number,
+  tx: number, ty: number,
+  sSide: Side,
+  tSide: Side,
+  sHalf: HalfDims,
+  tHalf: HalfDims,
+): string {
+  const s = anchorPointForSide(sx, sy, sSide, sHalf);
+  const t = anchorPointForSide(tx, ty, tSide, tHalf);
+  const sn = sideNormal(sSide);
+  const tn = sideNormal(tSide);
+  const sOff = computeControlPointOffset(s, t, sSide, sHalf);
+  const tOff = computeControlPointOffset(t, s, tSide, tHalf);
+  const cp1x = s.x + sn.x * sOff;
+  const cp1y = s.y + sn.y * sOff;
+  const cp2x = t.x + tn.x * tOff;
+  const cp2y = t.y + tn.y * tOff;
+  return `M ${s.x} ${s.y} C ${cp1x} ${cp1y} ${cp2x} ${cp2y} ${t.x} ${t.y}`;
+}
+
 export function pointToPointPath(
   ax: number, ay: number,
   bx: number, by: number,
@@ -63,23 +113,9 @@ export function pointToPointPath(
   sourceHalf: HalfDims = DEVICE_HALF,
   targetHalf: HalfDims = ARP_HALF,
 ): string {
-  const a = sourceSide
-    ? anchorPointForSide(ax, ay, sourceSide, sourceHalf)
-    : anchorPointForSide(ax, ay, computeDominantSide(ax, ay, [{ x: bx, y: by }], sourceHalf), sourceHalf);
-  const b = targetSide
-    ? anchorPointForSide(bx, by, targetSide, targetHalf)
-    : anchorPointForSide(bx, by, computeDominantSide(bx, by, [{ x: ax, y: ay }], targetHalf), targetHalf);
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const curvature = Math.min(dist * 0.25, 60);
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2;
-  const nx = -dy / (dist || 1);
-  const ny = dx / (dist || 1);
-  const cx = mx + nx * curvature;
-  const cy = my + ny * curvature;
-  return `M ${a.x} ${a.y} Q ${cx} ${cy} ${b.x} ${b.y}`;
+  const sSide = sourceSide ?? computeDominantSide(ax, ay, [{ x: bx, y: by }], sourceHalf);
+  const tSide = targetSide ?? computeDominantSide(bx, by, [{ x: ax, y: ay }], targetHalf);
+  return cubicPath(ax, ay, bx, by, sSide, tSide, sourceHalf, targetHalf);
 }
 
 export function curvedLinkPath(
@@ -90,25 +126,7 @@ export function curvedLinkPath(
   sourceHalf: HalfDims = DEVICE_HALF,
   targetHalf: HalfDims = DEVICE_HALF,
 ): string {
-  const s = sourceSide
-    ? anchorPointForSide(sx, sy, sourceSide, sourceHalf)
-    : anchorPointForSide(sx, sy, computeDominantSide(sx, sy, [{ x: tx, y: ty }], sourceHalf), sourceHalf);
-  const t = targetSide
-    ? anchorPointForSide(tx, ty, targetSide, targetHalf)
-    : anchorPointForSide(tx, ty, computeDominantSide(tx, ty, [{ x: sx, y: sy }], targetHalf), targetHalf);
-  const dx = t.x - s.x;
-  const dy = t.y - s.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-  const curvature = Math.min(dist * 0.25, 60);
-
-  const mx = (s.x + t.x) / 2;
-  const my = (s.y + t.y) / 2;
-
-  const nx = -dy / (dist || 1);
-  const ny = dx / (dist || 1);
-
-  const cx1 = mx + nx * curvature;
-  const cy1 = my + ny * curvature;
-
-  return `M ${s.x} ${s.y} Q ${cx1} ${cy1} ${t.x} ${t.y}`;
+  const sSide = sourceSide ?? computeDominantSide(sx, sy, [{ x: tx, y: ty }], sourceHalf);
+  const tSide = targetSide ?? computeDominantSide(tx, ty, [{ x: sx, y: sy }], targetHalf);
+  return cubicPath(sx, sy, tx, ty, sSide, tSide, sourceHalf, targetHalf);
 }
