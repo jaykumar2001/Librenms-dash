@@ -96,6 +96,7 @@ export function TopologyMap({ data, sse }: Props) {
   const [showArp, setShowArp] = useLocalStorage("librenms-dash:showArp:v1", false);
   const [showArpDevices, setShowArpDevices] = useLocalStorage("librenms-dash:showArpDevices:v1", false);
   const [snapToGrid, setSnapToGrid] = useLocalStorage("librenms-dash:snapToGrid:v1", false);
+  const [isDragging, setIsDragging] = useState(false);
   // ── Ephemeral UI state (not persisted) ──────────────────────────────────────
   const linkDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const linkTooltipHovered = useRef(false);
@@ -197,7 +198,7 @@ export function TopologyMap({ data, sse }: Props) {
     moveDevice,
     resizeSite,
     toggleSiteOrientation,
-  } = useForceLayout(data, dimensions.width, dimensions.height, showArpDevices, topInset);
+  } = useForceLayout(data, dimensions.width, dimensions.height, showArpDevices, topInset, isDragging);
 
   // When the layout regenerates (new topology, orientation change, reset), snap
   // the SVG transform back to the computed fit-scale so nothing overflows.
@@ -524,6 +525,7 @@ export function TopologyMap({ data, sse }: Props) {
       currentX: site.x,
       currentY: site.y,
     };
+    setIsDragging(true);
     didPan.current = false;
     isPanning.current = false;
     setHoveredDevice(null);
@@ -545,6 +547,7 @@ export function TopologyMap({ data, sse }: Props) {
       currentX: node.x,
       currentY: node.y,
     };
+    setIsDragging(true);
     didPan.current = false;
     isPanning.current = false;
     setHoveredDevice(null);
@@ -568,6 +571,7 @@ export function TopologyMap({ data, sse }: Props) {
       startWidth: site.width,
       startHeight: site.height,
     };
+    setIsDragging(true);
     didPan.current = false;
     isPanning.current = false;
     setHoveredDevice(null);
@@ -626,6 +630,7 @@ export function TopologyMap({ data, sse }: Props) {
 
   const handleMouseUp = useCallback(() => {
     isPanning.current = false;
+    setIsDragging(false);
     dragTarget.current = null;
   }, []);
 
