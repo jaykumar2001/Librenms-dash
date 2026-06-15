@@ -22,15 +22,18 @@ function formatTs(iso: string) {
   });
 }
 
-export function AssetEventToast() {
-  const [allEvents, setAllEvents] = useState<AssetEvent[]>([]);
+interface AssetEventToastProps {
+  allEvents: AssetEvent[];
+  connected: boolean;
+}
+
+export function AssetEventToast({ allEvents, connected }: AssetEventToastProps) {
   const [queue, setQueue] = useState<AssetEvent[]>([]);
   const [toast, setToast] = useState<AssetEvent | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [page, setPage] = useState(0);
   const [newCount, setNewCount] = useState(0);
-  const [connected, setConnected] = useState(false);
   const toastHovered = useRef(false);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const inGap = useRef(false);
@@ -49,34 +52,19 @@ export function AssetEventToast() {
     }, 300);
   }, [clearDismiss]);
 
-  const addEvents = useCallback((events: AssetEvent[]) => {
-    setAllEvents(prev => [...prev, ...events].slice(-200));
-    setNewCount(prev => prev + events.length);
+  const prevLengthRef = useRef(allEvents.length);
+  useEffect(() => {
+    const prevLen = prevLengthRef.current;
+    prevLengthRef.current = allEvents.length;
+    if (allEvents.length <= prevLen) return;
+    const newEvents = allEvents.slice(prevLen);
+    if (newEvents.length === 0) return;
+    setNewCount(prev => prev + newEvents.length);
     setQueue(prev => {
-      const merged = [...prev, ...events];
+      const merged = [...prev, ...newEvents];
       return merged.length > MAX_QUEUE ? merged.slice(-MAX_QUEUE) : merged;
     });
-  }, []);
-
-  // SSE connection
-  useEffect(() => {
-    const es = new EventSource("/api/events/stream");
-    es.addEventListener("init", (e) => {
-      try {
-        const events: AssetEvent[] = JSON.parse(e.data);
-        if (events.length > 0) setAllEvents(events);
-      } catch { /* ignore */ }
-    });
-    es.addEventListener("events", (e) => {
-      try {
-        const events: AssetEvent[] = JSON.parse(e.data);
-        if (events.length > 0) addEvents(events);
-      } catch { /* ignore */ }
-    });
-    es.onopen = () => setConnected(true);
-    es.onerror = () => setConnected(false);
-    return () => { es.close(); setConnected(false); };
-  }, [addEvents]);
+  }, [allEvents]);
 
   // Show next toast from queue
   useEffect(() => {
