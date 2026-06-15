@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { MouseEvent } from "react";
-import type { TopologyResponse, DeviceSummary } from "@librenms-dash/shared";
+import type { TopologyResponse, DeviceSummary, AssetEvent } from "@librenms-dash/shared";
 import { useForceLayout } from "@/hooks/useForceLayout";
 import { useLocalStorage } from "@/hooks/useLocalStorage";
 import { useTransformPersistence, readPersistedTransform, clearPersistedTransform, consumeFitTransformRequest } from "@/hooks/usePersistedLayout";
@@ -15,8 +15,14 @@ import { curvedLinkPath, pointToPointPath, computeDominantSide, DEVICE_HALF, ARP
 import { Logo } from "./Logo";
 import { AssetEventToast } from "./AssetEventToast";
 
+interface SSEState {
+  allEvents: AssetEvent[];
+  connected: boolean;
+}
+
 interface Props {
   data: TopologyResponse;
+  sse: SSEState;
 }
 
 const GRID_SIZE = 24;
@@ -59,7 +65,7 @@ function snapToNearby(value: number, candidates: number[]): number | null {
   return best;
 }
 
-export function TopologyMap({ data }: Props) {
+export function TopologyMap({ data, sse }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -1213,7 +1219,7 @@ export function TopologyMap({ data }: Props) {
       </div>
 
       {/* Asset change toasts — above copyright bar */}
-      <AssetEventToast />
+      <AssetEventToast allEvents={sse.allEvents} connected={sse.connected} />
 
       {/* Bottom-right: GPLv3 copyright, GitHub link, commit SHA */}
       <div className="absolute bottom-2 right-2 z-10 pointer-events-auto flex items-center gap-2 text-[10px] text-gray-500">
