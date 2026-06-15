@@ -1,4 +1,5 @@
 import { useTopology } from "@/hooks/useTopology";
+import { useSSE } from "@/hooks/useSSE";
 import { useAuth } from "@/context/AuthContext";
 import { TopologyMap } from "@/components/TopologyMap";
 import { LoginPage } from "@/components/LoginPage";
@@ -17,6 +18,7 @@ function AuthLoadingScreen({ message }: { message: string }) {
 
 function Dashboard() {
   const { data, isLoading, error } = useTopology();
+  const sse = useSSE();
 
   if (isLoading) {
     return (
@@ -42,7 +44,7 @@ function Dashboard() {
 
   if (!data) return null;
 
-  return <TopologyMap data={data} />;
+  return <TopologyMap data={data} sse={sse} />;
 }
 
 export function App() {

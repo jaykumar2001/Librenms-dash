@@ -646,6 +646,7 @@ export function useForceLayout(
   containerHeight: number,
   showArpDevices = false,
   topReserve = 56,
+  isDragging = false,
 ) {
   const persist = usePersistedLayout();
 
@@ -671,6 +672,7 @@ export function useForceLayout(
   const arpDeviceNodesRef = useRef(arpDeviceNodes);
   arpDeviceNodesRef.current = arpDeviceNodes;
   const layoutSigRef = useRef<string>("");
+  const pendingDataRef = useRef<TopologyResponse | undefined>();
 
   const relinkNodes = useCallback((nextNodes: LayoutNode[]) => {
     const nodeMap = new Map(nextNodes.map((node) => [node.hostname, node]));
@@ -693,12 +695,18 @@ export function useForceLayout(
 
   useEffect(() => {
     if (!data || !containerWidth) return;
+    if (isDragging) {
+      pendingDataRef.current = data;
+      return;
+    }
+    const effectiveData = pendingDataRef.current ?? data;
+    pendingDataRef.current = undefined;
     // Skip regenerating the layout (which discards manual drags/resizes) when the
     // topology and layout inputs are unchanged — e.g. on the 5-minute background poll.
-    const sig = layoutSignature(data, containerWidth, containerHeight, siteOrientations, showArpDevices, topReserve);
+    const sig = layoutSignature(effectiveData, containerWidth, containerHeight, siteOrientations, showArpDevices, topReserve);
     if (sig === layoutSigRef.current) return;
     layoutSigRef.current = sig;
-    const result = layoutAll(data, containerWidth, siteOrientations, showArpDevices, containerHeight, topReserve);
+    const result = layoutAll(effectiveData, containerWidth, siteOrientations, showArpDevices, containerHeight, topReserve);
     // Overlay saved positions on top of freshly-computed ones so manual drags
     // and resizes from a previous session are restored after reload.
     const restoredSites = persist.applySitePositions(result.sites);
@@ -726,7 +734,7 @@ export function useForceLayout(
     setArpDeviceNodes(arp.arpNodes);
     setDeviceGroups(restoredGroups);
     setInitialScale(result.initialScale);
-  }, [data, containerWidth, containerHeight, siteOrientations, showArpDevices, topReserve]);
+  }, [data, containerWidth, containerHeight, siteOrientations, showArpDevices, topReserve, isDragging]);
 
   const resetLayout = useCallback(() => {
     if (!data || !containerWidth) return;

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { cache } from "../cache/store.js";
-import { subscribeEvents, unsubscribeEvents } from "../jobs/poller.js";
+import { subscribeEvents, unsubscribeEvents, subscribeTopologyChanged, unsubscribeTopologyChanged } from "../jobs/poller.js";
 import type { AssetEvent } from "@librenms-dash/shared";
 
 const app = new Hono();
@@ -18,7 +18,16 @@ app.get("/stream", (c) => {
     };
 
     subscribeEvents(onEvents);
-    stream.onAbort(() => unsubscribeEvents(onEvents));
+
+    const onTopologyChanged = () => {
+      stream.writeSSE({ data: JSON.stringify({ ts: new Date().toISOString() }), event: "topology-changed" }).catch(() => {});
+    };
+
+    subscribeTopologyChanged(onTopologyChanged);
+    stream.onAbort(() => {
+      unsubscribeEvents(onEvents);
+      unsubscribeTopologyChanged(onTopologyChanged);
+    });
 
     // Keep alive — Hono closes the stream when this function returns,
     // so we block until the client disconnects.
