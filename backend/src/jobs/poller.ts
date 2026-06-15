@@ -47,6 +47,20 @@ const sseListeners = new Set<EventListener>();
 export function subscribeEvents(fn: EventListener) { sseListeners.add(fn); }
 export function unsubscribeEvents(fn: EventListener) { sseListeners.delete(fn); }
 
+type TopologyListener = () => void;
+const topologyListeners = new Set<TopologyListener>();
+
+export function subscribeTopologyChanged(fn: TopologyListener) { topologyListeners.add(fn); }
+export function unsubscribeTopologyChanged(fn: TopologyListener) { topologyListeners.delete(fn); }
+
+let topologyChangedInCycle = false;
+
+function flushTopologyChanged() {
+  if (!topologyChangedInCycle) return;
+  topologyChangedInCycle = false;
+  for (const fn of topologyListeners) fn();
+}
+
 function pushEvents(events: AssetEvent[]) {
   if (events.length === 0) return;
   const existing = cache.get<AssetEvent[]>("assetEvents") ?? [];
@@ -71,6 +85,7 @@ function diffAndLog(category: string, prev: Set<string>, curr: Set<string>): Set
       }
     }
     pushEvents(events);
+    if (events.length > 0) topologyChangedInCycle = true;
   }
   assetBaseline.add(category);
   return curr;
@@ -122,6 +137,7 @@ export async function pollDevicesAndLocations() {
 
   const currDevices = new Set(devices.map(d => `${d.hostname} (${d.ip})`));
   prevAssets.devices = diffAndLog("device", prevAssets.devices, currDevices);
+  flushTopologyChanged();
 }
 
 export async function pollPortsAndIps() {
@@ -169,6 +185,7 @@ export async function pollPortsAndIps() {
     for (const l of g.links) currOverlays.add(`${g.overlayType} ${l.from}<>${l.to}`);
   }
   prevAssets.overlayLinks = diffAndLog("overlay-link", prevAssets.overlayLinks, currOverlays);
+  flushTopologyChanged();
 
   // Build ARP-based connections (non-blocking, runs in background)
   pollArpLinks(devices, allIps).catch(e => console.warn("[poller] ARP poll failed:", e));
@@ -343,6 +360,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
     return `${mac} at ${d.location}`;
   }));
   prevAssets.arpDevices = diffAndLog("discovered-device", prevAssets.arpDevices, currArpDevices);
+  flushTopologyChanged();
 }
 
 function consolidateArpDevices(
@@ -551,6 +569,7 @@ export async function pollRoutes() {
   console.log(`[poller] Cached ${totalRoutes} routes across ${devicesWithRoutes} devices`);
 
   prevAssets.routes = diffAndLog("route", prevAssets.routes, currRoutes);
+  flushTopologyChanged();
 }
 
 export async function pollAlerts() {
