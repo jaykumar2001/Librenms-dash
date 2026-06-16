@@ -1018,10 +1018,11 @@ export function TopologyMap({ data, sse }: Props) {
                     sourceDisplayName: displayName(ad.seenByHostname),
                     targetDisplayName: ad.vendor || "Unknown device",
                     color: ARP_COLOR,
-                    sourceIp: parentDev?.ips?.[0] ?? parentDev?.lanIp ?? parentDev?.ip ?? "",
+                    sourceIp: ad.seenByIp ?? parentDev?.lanIp ?? parentDev?.ip ?? "",
                     targetIp: ad.ips.join(", "),
                     mac: formatMac(ad.mac),
                     interface: ad.seenByInterface,
+                    sourceMac: ad.seenByMac ? formatMac(ad.seenByMac) : undefined,
                     vendor: ad.vendor,
                   })}
                   onMouseLeave={hideLinkTooltip}
@@ -1051,10 +1052,11 @@ export function TopologyMap({ data, sse }: Props) {
               sourceDisplayName: displayName(ad.seenByHostname),
               targetDisplayName: ad.vendor || "Unknown device",
               color: ARP_COLOR,
-              sourceIp: parentDev?.ips?.[0] ?? parentDev?.lanIp ?? parentDev?.ip ?? "",
+              sourceIp: ad.seenByIp ?? parentDev?.lanIp ?? parentDev?.ip ?? "",
               targetIp: ad.ips.join(", "),
               mac: formatMac(ad.mac),
               interface: ad.seenByInterface,
+              sourceMac: ad.seenByMac ? formatMac(ad.seenByMac) : undefined,
               vendor: ad.vendor,
             });
             return (

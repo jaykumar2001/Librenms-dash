@@ -156,6 +156,8 @@ export interface ArpDiscoveredDevice {
   siteId: string;
   seenByHostname: string;
   seenByInterface?: string;
+  seenByIp?: string;
+  seenByMac?: string;
 }
 
 export interface TopologyResponse {

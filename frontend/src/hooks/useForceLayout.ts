@@ -71,6 +71,8 @@ export interface ArpDeviceLayoutNode {
   siteId: string;
   seenByHostname: string;
   seenByInterface?: string;
+  seenByIp?: string;
+  seenByMac?: string;
   x: number;
   y: number;
 }
@@ -340,6 +342,8 @@ function layoutAll(
           siteId: site.id,
           seenByHostname: ad.seenByHostname,
           seenByInterface: ad.seenByInterface,
+          seenByIp: ad.seenByIp,
+          seenByMac: ad.seenByMac,
           x: arpStartX + ARP_NODE_W / 2 + col * (ARP_NODE_W + ARP_NODE_GAP_X),
           y: arpStartY + ARP_SECTION_LABEL_H + ARP_SECTION_PAD + ARP_NODE_H / 2 + row * (ARP_NODE_H + ARP_NODE_GAP_Y),
         });

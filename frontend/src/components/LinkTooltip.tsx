@@ -24,6 +24,7 @@ export interface LinkTooltipData {
   // ARP discovered device
   interface?: string;
   vendor?: string;
+  sourceMac?: string;
 }
 
 const OVERLAY_LABELS: Record<string, string> = {
@@ -70,6 +71,7 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
             <Row label="Device" value={data.sourceDisplayName} />
             {data.interface && <Row label="Interface" value={data.interface} mono />}
             {data.sourceIp && <Row label="IP" value={data.sourceIp} mono />}
+            {data.sourceMac && <Row label="MAC" value={data.sourceMac} mono />}
             <SectionLabel label="Discovered device" />
             <Row label="Vendor" value={data.vendor || data.targetDisplayName || "Unknown"} />
             <Row label="IP" value={data.targetIp ?? "—"} mono />

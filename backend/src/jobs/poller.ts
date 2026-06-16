@@ -237,6 +237,16 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
     }
   }
 
+  // Map port_id → first local IPv4 on that port (for seenByIp on discovered devices).
+  const portIdToIp = new Map<number, string>();
+  for (const [, ips] of allIps) {
+    for (const ip of ips) {
+      if (!ip.ipv4_address || portIdToIp.has(ip.port_id)) continue;
+      if (engine.isOverlayIp(ip.ipv4_address) || isDockerIp(ip.ipv4_address)) continue;
+      portIdToIp.set(ip.port_id, ip.ipv4_address);
+    }
+  }
+
   // Active devices provide IP→hostname mapping for ARP link building.
   // Only map local IPs (skip overlay, docker-bridge, and excluded interfaces)
   // so ARP links stay on physical/LAN paths.
@@ -382,7 +392,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
 
   // --- Consolidation: union-find to merge MACs sharing an IP and IPs sharing a MAC ---
-  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, activeDeviceIds);
+  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, portIdToMac, portIdToIp, activeDeviceIds);
 
   cache.set("arpLinks", arpLinks, TTL.PORTS);
   cache.set("arpDevices", arpDevices, TTL.PORTS);
@@ -404,6 +414,8 @@ function consolidateArpDevices(
   hostnameToLocation: Map<string, string>,
   isOverlayIp: (ip: string) => boolean,
   portIdToIfName: Map<number, string>,
+  portIdToMac: Map<number, string>,
+  portIdToIp: Map<number, string>,
   activeDeviceIds: Set<number>,
 ): ArpDiscoveredDevice[] {
   // Phase 1: collect valid (mac, ip) pairs, grouped by location.
@@ -531,6 +543,8 @@ function consolidateArpDevices(
         siteId,
         seenByHostname: seenBy,
         seenByInterface: portIdToIfName.get(comp.portId),
+        seenByIp: portIdToIp.get(comp.portId),
+        seenByMac: portIdToMac.get(comp.portId),
       });
     }
   }
