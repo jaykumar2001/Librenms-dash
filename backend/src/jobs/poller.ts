@@ -1,6 +1,6 @@
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet, delay } from "../librenms/client.js";
-import { buildOverlayLinks, engine } from "../librenms/overlays.js";
+import { buildOverlayLinks, engine, isExcludedIface, isDockerIp, findLanIp } from "../librenms/overlays.js";
 import { loadOuiDatabases, lookupVendor, normalizeMac } from "../librenms/oui.js";
 import { makeCidrMatcher } from "../librenms/cidr.js";
 import { ARP_EXCLUDED_SUBNETS, OVERLAY_SUBNET_LIST } from "../config.js";
@@ -221,25 +221,56 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   // Active device IDs — used to restrict which devices can be "seenBy" sources
   const activeDeviceIds = new Set(devices.map((d) => d.device_id));
 
-  // Active devices also provide IP→hostname mapping for ARP link building
-  for (const d of devices) {
-    ipToHostname.set(d.ip, d.hostname);
-    const ips = allIps.get(d.hostname) ?? [];
-    for (const ip of ips) {
-      ipToHostname.set(ip.ipv4_address, d.hostname);
-    }
-  }
-
   // Map each port_id to its interface name (from the per-device port cache) so
   // ARP links/devices can report which interface a device learned a peer on.
+  // Built early because ipToHostname filtering needs it.
   const portIdToIfName = new Map<number, string>();
+  const portIdToMac = new Map<number, string>();
   for (const d of allDevicesForExclusion) {
     const ports = cache.get<LnmsPort[]>(`ports:${d.hostname}`);
     if (!ports) continue;
     for (const p of ports) {
       const name = p.ifName || p.ifDescr;
       if (name) portIdToIfName.set(p.port_id, name);
+      const mac = normalizeMac(p.ifPhysAddress ?? "");
+      if (mac && mac.length === 12 && mac !== "000000000000") portIdToMac.set(p.port_id, mac);
     }
+  }
+
+  // Map port_id → first local IPv4 on that port (for seenByIp on discovered devices).
+  const portIdToIp = new Map<number, string>();
+  for (const [, ips] of allIps) {
+    for (const ip of ips) {
+      if (!ip.ipv4_address || portIdToIp.has(ip.port_id)) continue;
+      if (engine.isOverlayIp(ip.ipv4_address) || isDockerIp(ip.ipv4_address)) continue;
+      portIdToIp.set(ip.port_id, ip.ipv4_address);
+    }
+  }
+
+  // Active devices provide IP→hostname mapping for ARP link building.
+  // Only map local IPs (skip overlay, docker-bridge, and excluded interfaces)
+  // so ARP links stay on physical/LAN paths.
+  for (const d of devices) {
+    if (!engine.isOverlayIp(d.ip) && !isDockerIp(d.ip)) {
+      ipToHostname.set(d.ip, d.hostname);
+    }
+    const ips = allIps.get(d.hostname) ?? [];
+    for (const ip of ips) {
+      if (!ip.ipv4_address) continue;
+      if (engine.isOverlayIp(ip.ipv4_address)) continue;
+      if (isDockerIp(ip.ipv4_address)) continue;
+      const ifName = portIdToIfName.get(ip.port_id) ?? "";
+      if (ifName && isExcludedIface(ifName)) continue;
+      ipToHostname.set(ip.ipv4_address, d.hostname);
+    }
+  }
+
+  // Pre-compute each device's local (LAN) IP for ARP link toIp field.
+  const hostnameToLocalIp = new Map<string, string>();
+  for (const d of devices) {
+    const ips = allIps.get(d.hostname) ?? [];
+    const ports = cache.get<LnmsPort[]>(`ports:${d.hostname}`) ?? [];
+    hostnameToLocalIp.set(d.hostname, findLanIp(d.ip, ips, ports));
   }
 
   const linkSet = new Set<string>();
@@ -274,18 +305,30 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
         if (!seeingHostname || seeingHostname === ownerHostname) continue;
         if (hostnameToLocation.get(seeingHostname) !== hostnameToLocation.get(ownerHostname)) continue;
 
+        // Only build links from local interfaces
+        const ifName = portIdToIfName.get(entry.port_id) ?? "";
+        if (ifName && isExcludedIface(ifName)) continue;
+
         const key = [ownerHostname, seeingHostname].sort().join("<>");
         if (linkSet.has(key)) continue;
         linkSet.add(key);
 
-        const seeingDevice = devices.find(d => d.hostname === seeingHostname);
+        const ownerIps = allIps.get(ownerHostname) ?? [];
+        const ownerPortId = ownerIps.find(i => i.ipv4_address === ip)?.port_id;
+        const fromIfName = ownerPortId ? portIdToIfName.get(ownerPortId) : undefined;
+        const fromMac = ownerPortId ? portIdToMac.get(ownerPortId) : undefined;
+        const toMac = portIdToMac.get(entry.port_id);
+
         arpLinks.push({
           fromHostname: ownerHostname,
           toHostname: seeingHostname,
           fromIp: ip,
-          toIp: seeingDevice?.ip ?? "",
+          toIp: hostnameToLocalIp.get(seeingHostname) ?? "",
           mac: entry.mac_address,
-          toInterface: portIdToIfName.get(entry.port_id),
+          fromInterface: fromIfName,
+          fromMac: fromMac ?? entry.mac_address,
+          toInterface: ifName || undefined,
+          toMac,
         });
       }
     } catch {
@@ -349,7 +392,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
 
   // --- Consolidation: union-find to merge MACs sharing an IP and IPs sharing a MAC ---
-  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, activeDeviceIds);
+  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, portIdToMac, portIdToIp, activeDeviceIds);
 
   cache.set("arpLinks", arpLinks, TTL.PORTS);
   cache.set("arpDevices", arpDevices, TTL.PORTS);
@@ -371,6 +414,8 @@ function consolidateArpDevices(
   hostnameToLocation: Map<string, string>,
   isOverlayIp: (ip: string) => boolean,
   portIdToIfName: Map<number, string>,
+  portIdToMac: Map<number, string>,
+  portIdToIp: Map<number, string>,
   activeDeviceIds: Set<number>,
 ): ArpDiscoveredDevice[] {
   // Phase 1: collect valid (mac, ip) pairs, grouped by location.
@@ -389,9 +434,9 @@ function consolidateArpDevices(
     if (isBogus(mac)) continue;
     if (isOverlayIp(ip)) continue;
 
-    // Skip MACs learned on ZeroTier interfaces
+    // Skip entries learned on overlay or docker bridge interfaces
     const ifName = portIdToIfName.get(entry.port_id);
-    if (ifName && /^zt/i.test(ifName)) continue;
+    if (ifName && isExcludedIface(ifName)) continue;
 
     const seenBy = deviceIdToHostname.get(entry.device_id);
     if (!seenBy) continue;
@@ -498,6 +543,8 @@ function consolidateArpDevices(
         siteId,
         seenByHostname: seenBy,
         seenByInterface: portIdToIfName.get(comp.portId),
+        seenByIp: portIdToIp.get(comp.portId),
+        seenByMac: portIdToMac.get(comp.portId),
       });
     }
   }

@@ -15,6 +15,7 @@ export interface LinkTooltipData {
   sourceIp?: string;
   targetIp?: string;
   mac?: string;
+  targetMac?: string;
   // Overlay
   overlayType?: string;
   // Per-endpoint interface (LLDP ports, overlay/ARP interfaces)
@@ -23,6 +24,7 @@ export interface LinkTooltipData {
   // ARP discovered device
   interface?: string;
   vendor?: string;
+  sourceMac?: string;
 }
 
 const OVERLAY_LABELS: Record<string, string> = {
@@ -69,10 +71,26 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
             <Row label="Device" value={data.sourceDisplayName} />
             {data.interface && <Row label="Interface" value={data.interface} mono />}
             {data.sourceIp && <Row label="IP" value={data.sourceIp} mono />}
+            {data.sourceMac && <Row label="MAC" value={data.sourceMac} mono />}
             <SectionLabel label="Discovered device" />
             <Row label="Vendor" value={data.vendor || data.targetDisplayName || "Unknown"} />
             <Row label="IP" value={data.targetIp ?? "—"} mono />
             <Row label="MAC" value={data.mac ?? "—"} mono />
+          </tbody>
+        </table>
+      ) : data.type === "arp" ? (
+        <table className="w-full border-collapse text-xs">
+          <tbody>
+            <SectionLabel label="Device" />
+            <Row label="Name" value={data.sourceDisplayName} />
+            {data.sourceInterface && <Row label="Interface" value={data.sourceInterface} mono />}
+            {data.sourceIp && <Row label="IP" value={data.sourceIp} mono />}
+            {data.mac && <Row label="MAC" value={data.mac} mono />}
+            <SectionLabel label="Seen by" />
+            <Row label="Device" value={data.targetDisplayName} />
+            {data.targetInterface && <Row label="Interface" value={data.targetInterface} mono />}
+            {data.targetIp && <Row label="IP" value={data.targetIp} mono />}
+            {data.targetMac && <Row label="MAC" value={data.targetMac} mono />}
           </tbody>
         </table>
       ) : (
@@ -84,7 +102,6 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
               iface={data.sourceInterface}
               ip={data.sourceIp}
               ipLabel={data.type === "overlay" ? "Overlay IP" : "IP"}
-              mac={data.type === "arp" ? data.mac : undefined}
             />
             <DeviceSection
               role="Destination"

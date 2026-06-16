@@ -19,6 +19,7 @@ RUN mkdir -p /app/data && \
 
 # build frontend + backend
 FROM deps AS build
+ARG COMMIT_SHA
 COPY shared/ shared/
 COPY frontend/ frontend/
 COPY backend/ backend/
@@ -35,6 +36,8 @@ COPY --from=build /app/frontend/dist frontend/dist/
 COPY --from=build /app/shared shared/
 COPY --from=oui /app/data data/
 
+ARG COMMIT_SHA
+ENV COMMIT_SHA=${COMMIT_SHA}
 ENV NODE_ENV=production
 ENV NODE_TLS_REJECT_UNAUTHORIZED=0
 EXPOSE 3001

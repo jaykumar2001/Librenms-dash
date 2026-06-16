@@ -141,7 +141,10 @@ export interface ArpLink {
   fromIp: string;
   toIp: string;
   mac: string;
+  fromInterface?: string;
+  fromMac?: string;
   toInterface?: string;
+  toMac?: string;
 }
 
 export interface ArpDiscoveredDevice {
@@ -153,6 +156,8 @@ export interface ArpDiscoveredDevice {
   siteId: string;
   seenByHostname: string;
   seenByInterface?: string;
+  seenByIp?: string;
+  seenByMac?: string;
 }
 
 export interface TopologyResponse {

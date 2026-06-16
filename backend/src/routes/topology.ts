@@ -1,15 +1,11 @@
 import { Hono } from "hono";
-import { execSync } from "node:child_process";
 import { cache } from "../cache/store.js";
 import type { TopologyResponse, Site, DeviceSummary, SubnetGroup, NeighborLink, ArpLink, ArpDiscoveredDevice, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsLocation, LnmsAlert, LnmsDeviceIp, LnmsLink } from "../librenms/types.js";
-import { getOverlayPortSummaries, findLanIp, findDeviceIps } from "../librenms/overlays.js";
+import { getOverlayPortSummaries, findLanIp, findDeviceIps, isExcludedIface } from "../librenms/overlays.js";
 import { normalizeMac } from "../librenms/oui.js";
 
-let commitSha: string | undefined;
-try {
-  commitSha = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
-} catch { /* not a git repo or git unavailable */ }
+const commitSha: string | undefined = process.env.COMMIT_SHA || undefined;
 
 const app = new Hono();
 
@@ -64,7 +60,7 @@ app.get("/", (c) => {
       hostname: device.hostname,
       displayName: deriveDisplayName(device),
       ip: device.ip,
-      lanIp: findLanIp(device.ip, ips),
+      lanIp: findLanIp(device.ip, ips, ports),
       ips: findDeviceIps(ips, ports),
       macs: [...macSet],
       os: device.os,
@@ -103,6 +99,11 @@ app.get("/", (c) => {
     const remoteDev = deviceIdMap.get(link.remote_device_id);
     if (!localDev || !remoteDev) continue;
 
+    const localPortName = portNameMap.get(link.local_port_id) ?? "";
+    const remotePortName = portNameMap.get(link.remote_port_id) ?? link.remote_port ?? "";
+    if (localPortName && isExcludedIface(localPortName)) continue;
+    if (remotePortName && isExcludedIface(remotePortName)) continue;
+
     const key = [link.local_device_id, link.remote_device_id].sort().join("-") +
       ":" + [link.local_port_id, link.remote_port_id].sort().join("-");
     if (neighborSet.has(key)) continue;
@@ -112,10 +113,10 @@ app.get("/", (c) => {
       id: link.id,
       localDeviceId: link.local_device_id,
       localHostname: localDev.hostname,
-      localPort: portNameMap.get(link.local_port_id) ?? `port-${link.local_port_id}`,
+      localPort: localPortName || `port-${link.local_port_id}`,
       remoteDeviceId: link.remote_device_id,
       remoteHostname: remoteDev.hostname,
-      remotePort: portNameMap.get(link.remote_port_id) ?? link.remote_port ?? `port-${link.remote_port_id}`,
+      remotePort: remotePortName || `port-${link.remote_port_id}`,
       protocol: link.protocol,
     });
   }

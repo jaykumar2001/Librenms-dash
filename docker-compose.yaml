@@ -1,6 +1,9 @@
 services:
   librenms-dash:
-    build: .
+    build:
+      context: .
+      args:
+        COMMIT_SHA: ${COMMIT_SHA:-}
     container_name: librenms-dash
     restart: unless-stopped
     ports:
