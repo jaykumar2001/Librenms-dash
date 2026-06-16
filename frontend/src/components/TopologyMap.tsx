@@ -670,10 +670,15 @@ export function TopologyMap({ data, sse }: Props) {
       if (!s) { s = { lldp: 0, arp: 0, discovered: 0, routes: 0 }; map.set(id, s); }
       return s;
     };
-    // Seed every site so the header shows counts (including zeros) for all locations.
     for (const site of data.sites) {
       const b = bucket(site.id);
-      for (const dev of site.devices) b.routes += dev.routes?.length ?? 0;
+      const seen = new Set<string>();
+      for (const dev of site.devices) {
+        for (const r of dev.routes ?? []) {
+          const key = `${r.dest}/${r.prefix}>${r.nextHop}`;
+          if (!seen.has(key)) { seen.add(key); b.routes++; }
+        }
+      }
     }
     for (const nl of neighborLinks) {
       for (const id of new Set([nl.source.siteId, nl.target.siteId])) bucket(id).lldp++;
@@ -686,11 +691,15 @@ export function TopologyMap({ data, sse }: Props) {
   }, [neighborLinks, arpLinks, data.arpDevices, data.sites]);
 
   const totalRoutes = useMemo(() => {
-    let count = 0;
+    const seen = new Set<string>();
     for (const site of data.sites) {
-      for (const dev of site.devices) count += dev.routes?.length ?? 0;
+      for (const dev of site.devices) {
+        for (const r of dev.routes ?? []) {
+          seen.add(`${r.dest}/${r.prefix}>${r.nextHop}`);
+        }
+      }
     }
-    return count;
+    return seen.size;
   }, [data.sites]);
 
   return (
