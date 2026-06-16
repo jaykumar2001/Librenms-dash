@@ -920,9 +920,11 @@ export function TopologyMap({ data, sse }: Props) {
                   targetDisplayName: displayName(al.target.hostname),
                   color: ARP_COLOR,
                   sourceIp: al.fromIp,
+                  sourceInterface: al.fromInterface,
                   targetIp: al.toIp,
                   targetInterface: al.toInterface,
-                  mac: formatMac(al.mac),
+                  mac: formatMac(al.fromMac ?? al.mac),
+                  targetMac: al.toMac ? formatMac(al.toMac) : undefined,
                 })}
                 onMouseLeave={hideLinkTooltip}
               />

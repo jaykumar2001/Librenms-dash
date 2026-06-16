@@ -58,24 +58,36 @@ export function getOverlayPortSummaries(
   return [...best.values()];
 }
 
-export function findLanIp(deviceIp: string, ips: LnmsDeviceIp[]): string {
+export function findLanIp(deviceIp: string, ips: LnmsDeviceIp[], ports?: LnmsPort[]): string {
+  const portIdToIfName = new Map<number, string>();
+  if (ports) {
+    for (const p of ports) {
+      const name = p.ifName || p.ifDescr;
+      if (name) portIdToIfName.set(p.port_id, name);
+    }
+  }
+
   const lanIps: string[] = [];
   for (const entry of ips) {
     const addr = entry.ipv4_address;
     if (!addr || addr === "127.0.0.1") continue;
-    if (!engine.isOverlayIp(addr)) {
-      lanIps.push(addr);
+    if (engine.isOverlayIp(addr)) continue;
+    if (isDockerIp(addr)) continue;
+    if (ports) {
+      const ifName = portIdToIfName.get(entry.port_id) ?? "";
+      if (ifName && isExcludedIface(ifName)) continue;
     }
+    lanIps.push(addr);
   }
-  if (!engine.isOverlayIp(deviceIp) && deviceIp) return deviceIp;
+  if (!engine.isOverlayIp(deviceIp) && !isDockerIp(deviceIp) && deviceIp) return deviceIp;
   if (lanIps.length > 0) return lanIps[0];
   return deviceIp;
 }
 
 const DOCKER_IFACE_RE = /^(br-[0-9a-f]{6,}|docker|veth)/i;
-const isDockerIp = makeCidrMatcher(DOCKER_SUBNETS);
+export const isDockerIp = makeCidrMatcher(DOCKER_SUBNETS);
 
-function isExcludedIface(ifName: string): boolean {
+export function isExcludedIface(ifName: string): boolean {
   if (ifName === "lo") return true;
   if (DOCKER_IFACE_RE.test(ifName)) return true;
   return engine.classifyPort({ ifName } as LnmsPort) !== null;

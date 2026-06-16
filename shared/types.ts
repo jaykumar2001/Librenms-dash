@@ -141,7 +141,10 @@ export interface ArpLink {
   fromIp: string;
   toIp: string;
   mac: string;
+  fromInterface?: string;
+  fromMac?: string;
   toInterface?: string;
+  toMac?: string;
 }
 
 export interface ArpDiscoveredDevice {

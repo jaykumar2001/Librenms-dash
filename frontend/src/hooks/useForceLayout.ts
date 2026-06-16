@@ -39,7 +39,10 @@ export interface ArpLayoutLink {
   fromIp: string;
   toIp: string;
   mac: string;
+  fromInterface?: string;
+  fromMac?: string;
   toInterface?: string;
+  toMac?: string;
 }
 
 export interface SiteCluster {
@@ -394,7 +397,10 @@ function layoutAll(
         fromIp: a.fromIp,
         toIp: a.toIp,
         mac: a.mac,
+        fromInterface: a.fromInterface,
+        fromMac: a.fromMac,
         toInterface: a.toInterface,
+        toMac: a.toMac,
       });
     }
   }
