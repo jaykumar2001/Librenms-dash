@@ -16,12 +16,15 @@
 ## What It Shows
 
 - Devices grouped by LibreNMS `location`
-- Overlay links for ZeroTier, WireGuard, and Tailscale
+- Overlay links for ZeroTier, WireGuard, Tailscale, GRE, IPSec, Tinc, PPTP, Tunnel, and TAP (auto-detected by interface name)
 - LLDP/CDP neighbor links
 - ARP-derived links, filtered to same-location devices
 - Per-device IPv4 routing tables (next-hop, destination, interface)
 - Device hover popovers with traffic and health graphs
+- Real-time asset change notifications via SSE (device/port/IP added or removed)
+- MAC vendor lookups via IEEE OUI databases
 - Drag, snap, resize, and orientation controls for site boxes
+- Pinch and scroll zoom with persisted viewport
 <img width="1506" height="738" alt="Librenms-Dash" src="https://github.com/user-attachments/assets/d46b4d37-1ac9-44b1-adfb-a6fe19c2f208" />
 
 ## Repository Layout
@@ -46,6 +49,8 @@ LIBRENMS_URL=https://librenms.local.lan
 LIBRENMS_TOKEN=<token>
 LIBRENMS_USER=<username>   # optional — enables route table polling
 LIBRENMS_PASS=<password>   # optional — enables route table polling
+AUTH_USERNAME=admin         # required — dashboard login username
+AUTH_PASSWORD=changeme      # required — dashboard login password
 PORT=3001
 NODE_ENV=development
 ```
@@ -129,6 +134,12 @@ The backend exposes:
 - `GET /api/ports/:hostname`
 - `GET /api/graph/device/:hostname/:type`
 - `GET /api/graph/icon/:icon`
+- `POST /api/auth/login`
+- `GET /api/auth/session`
+- `POST /api/auth/logout`
+- `GET /api/events/stream` (SSE)
+
+All `/api/*` routes except `/api/auth` and `/api/health` require a valid session cookie.
 
 `GET /api/topology` is the main payload for the map. It includes:
 
@@ -163,7 +174,7 @@ When a device moves, its category underlay and connected links update. When a si
 
 This dashboard is designed for a trusted LAN / management network. Be aware of its trust model before exposing it:
 
-- **No authentication.** Every API endpoint (and the bundled frontend) is served without a login. Anyone who can reach the backend port can read the full device inventory, IP addresses, serials, and topology. Do not expose port `3001` to untrusted networks — put it behind a VPN, an authenticating reverse proxy, or a firewall.
+- **Simple authentication.** The dashboard requires a username and password (`AUTH_USERNAME` / `AUTH_PASSWORD` environment variables). Sessions are stored in-memory and are lost on restart. This is suitable for a trusted network but is not a substitute for a proper identity provider — do not expose port `3001` to untrusted networks without an additional layer such as a VPN, an authenticating reverse proxy, or a firewall.
 - **TLS verification is disabled for LibreNMS** when `LIBRENMS_URL` is HTTPS, to accommodate self-signed certificates. This affects outbound TLS for the backend process, which only ever talks to the configured LibreNMS instance.
 - **The graph/icon endpoints proxy to LibreNMS** using the API token. User-supplied path segments are URL-encoded to prevent traversal, but the backend is still a privileged client of LibreNMS — keep it on the same trust boundary as LibreNMS itself.
 
