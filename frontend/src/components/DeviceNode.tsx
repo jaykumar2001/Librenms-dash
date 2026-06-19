@@ -9,6 +9,7 @@ interface Props {
   device?: DeviceSummary;
   interactive?: boolean;
   highlighted?: boolean;
+  searchMatch?: boolean;
   onHover: (hostname: string | null) => void;
   onMouseDown?: (event: MouseEvent<SVGGElement>) => void;
   onClick?: (event: MouseEvent<SVGGElement>) => void;
@@ -30,7 +31,7 @@ const OVERLAY_LABELS: Record<string, string> = {
   tailscale: "TS",
 };
 
-export function DeviceNode({ node, device, interactive = true, highlighted, onHover, onMouseDown, onClick }: Props) {
+export function DeviceNode({ node, device, interactive = true, highlighted, searchMatch, onHover, onMouseDown, onClick }: Props) {
   const [isHovered, setIsHovered] = useState(false);
   const x = (node.x ?? 0) - BOX_W / 2;
   const y = (node.y ?? 0) - BOX_H / 2;
@@ -49,6 +50,7 @@ export function DeviceNode({ node, device, interactive = true, highlighted, onHo
   const displayName = device?.displayName ?? node.hostname;
   const deviceIps = device?.ips?.length ? device.ips : [device?.lanIp ?? device?.ip ?? ""];
   const overlayPorts = (device?.overlayPorts ?? []).filter((p) => p.ip);
+  const active = isHovered || highlighted || searchMatch;
 
   return (
     <g
@@ -58,17 +60,32 @@ export function DeviceNode({ node, device, interactive = true, highlighted, onHo
       onMouseLeave={handleLeave}
       style={{ cursor: interactive ? "move" : "pointer" }}
     >
+      {searchMatch && (
+        <rect
+          x={x - 6}
+          y={y - 6}
+          width={BOX_W + 12}
+          height={BOX_H + 12}
+          rx={9}
+          fill="#facc15"
+          fillOpacity={0.08}
+          stroke="#facc15"
+          strokeWidth={2}
+          className="search-match-glow"
+        />
+      )}
       <rect
         x={x}
         y={y}
         width={BOX_W}
         height={BOX_H}
         rx={5}
-        fill={isHovered || highlighted ? "#1e293b" : "#0f172a"}
-        fillOpacity={isHovered ? 0.92 : highlighted ? 0.88 : 0.78}
-        stroke={statusColor}
-        strokeWidth={isHovered || highlighted ? 2 : 1.5}
-        strokeOpacity={isHovered || highlighted ? 1 : 0.65}
+        fill={searchMatch ? "#1e293b" : active ? "#1e293b" : "#0f172a"}
+        fillOpacity={searchMatch ? 0.95 : isHovered ? 0.92 : highlighted ? 0.88 : 0.78}
+        stroke={searchMatch ? "#facc15" : statusColor}
+        strokeWidth={searchMatch ? 2.5 : active ? 2 : 1.5}
+        strokeOpacity={active ? 1 : 0.65}
+        className={searchMatch ? "search-match-box" : undefined}
       />
 
       {/* Icon */}
@@ -84,9 +101,9 @@ export function DeviceNode({ node, device, interactive = true, highlighted, onHo
       <text
         x={x + 6 + ICON_SIZE + 5}
         y={y + 18}
-        fill="#f1f5f9"
-        fontSize={11}
-        fontWeight={600}
+        fill={searchMatch ? "#facc15" : "#f1f5f9"}
+        fontSize={searchMatch ? 12 : 11}
+        fontWeight={searchMatch ? 700 : 600}
         fontFamily="system-ui, sans-serif"
       >
         {displayName.length > 13 ? displayName.slice(0, 12) + "…" : displayName}

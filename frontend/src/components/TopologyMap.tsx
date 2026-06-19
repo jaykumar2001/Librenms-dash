@@ -47,6 +47,10 @@ function formatMac(mac: string): string {
   return clean.match(/.{2}/g)!.join(":");
 }
 
+function normalizeMacSearch(input: string): string {
+  return input.replace(/[:\-.\s]/g, "").toLowerCase();
+}
+
 function readViewportSize(): { width: number; height: number } {
   if (typeof window === "undefined") return { width: 1200, height: 800 };
   return { width: window.innerWidth, height: window.innerHeight };
@@ -106,6 +110,9 @@ export function TopologyMap({ data, sse }: Props) {
   const alertHoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertDismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const alertTooltipHovered = useRef(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const prevCommitSha = useRef(data.commitSha);
   const [shaChanged, setShaChanged] = useState(false);
 
@@ -218,6 +225,95 @@ export function TopologyMap({ data, sse }: Props) {
     }
     return map;
   }, [data.sites]);
+
+  const searchMatches = useMemo(() => {
+    const q = searchQuery.trim();
+    if (!q) return [];
+    const qLower = q.toLowerCase();
+    const qMac = normalizeMacSearch(q);
+    const looksLikeMac = /^[0-9a-f]{2,}$/i.test(qMac) && qMac.length >= 4;
+    const matches: string[] = [];
+
+    for (const site of data.sites) {
+      for (const dev of site.devices) {
+        if (
+          dev.hostname.toLowerCase().includes(qLower) ||
+          dev.displayName.toLowerCase().includes(qLower) ||
+          dev.sysName?.toLowerCase().includes(qLower) ||
+          dev.ip?.includes(qLower) ||
+          dev.lanIp?.includes(qLower) ||
+          dev.ips?.some((ip) => ip.includes(qLower)) ||
+          (looksLikeMac && dev.macs?.some((m) => normalizeMacSearch(m).includes(qMac)))
+        ) {
+          matches.push(dev.hostname);
+        }
+      }
+    }
+
+    for (const ad of data.arpDevices ?? []) {
+      if (
+        ad.vendor?.toLowerCase().includes(qLower) ||
+        ad.ips?.some((ip) => ip.includes(qLower)) ||
+        (looksLikeMac && (
+          normalizeMacSearch(ad.mac).includes(qMac) ||
+          ad.macs?.some((m) => normalizeMacSearch(m).includes(qMac))
+        ))
+      ) {
+        matches.push(ad.mac);
+      }
+    }
+
+    return matches;
+  }, [searchQuery, data.sites, data.arpDevices]);
+
+  const [searchMatchIndex, setSearchMatchIndex] = useState(0);
+
+  useEffect(() => {
+    setSearchMatchIndex(0);
+  }, [searchMatches]);
+
+  const searchMatchId = searchMatches.length > 0 ? searchMatches[searchMatchIndex % searchMatches.length] : null;
+
+  const centerOnMatch = useCallback((matchId: string) => {
+    const node = nodes.find((n) => n.hostname === matchId);
+    if (node) {
+      setTransform((prev) => ({
+        scale: prev.scale,
+        x: dimensions.width / 2 - node.x * prev.scale,
+        y: dimensions.height / 2 - node.y * prev.scale,
+      }));
+      return;
+    }
+    const arpNode = arpDeviceNodes.find((ad) => ad.mac === matchId);
+    if (arpNode) {
+      setTransform((prev) => ({
+        scale: prev.scale,
+        x: dimensions.width / 2 - arpNode.x * prev.scale,
+        y: dimensions.height / 2 - arpNode.y * prev.scale,
+      }));
+    }
+  }, [nodes, arpDeviceNodes, dimensions]);
+
+  useEffect(() => {
+    if (searchMatchId) centerOnMatch(searchMatchId);
+  }, [searchMatchId, centerOnMatch]);
+
+  const handleSearchEnter = useCallback(() => {
+    if (searchMatches.length <= 1) return;
+    setSearchMatchIndex((prev) => (prev + 1) % searchMatches.length);
+  }, [searchMatches]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "f") {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const displayName = useCallback((hostname: string) => {
     return deviceMap.get(hostname)?.displayName ?? hostname;
@@ -796,7 +892,7 @@ export function TopologyMap({ data, sse }: Props) {
         </button>
       </div>
 
-      {/* Status */}
+      {/* Status + Search */}
       <div className="flex flex-wrap items-center gap-4 bg-gray-900/90 backdrop-blur border border-gray-700 rounded-lg px-4 py-2 text-xs pointer-events-auto">
         <span className="text-gray-400">
           {data.sites.length} sites, {data.sites.reduce((s, site) => s + site.devices.length, 0)} devices
@@ -811,6 +907,54 @@ export function TopologyMap({ data, sse }: Props) {
           </span>
         )}
         <span className="text-gray-500">Updated {new Date(data.lastUpdated).toLocaleTimeString()}</span>
+        <span className="text-gray-700">|</span>
+        {searchOpen ? (
+          <span className="flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") { setSearchQuery(""); setSearchOpen(false); }
+                if (e.key === "Enter") handleSearchEnter();
+                e.stopPropagation();
+              }}
+              placeholder="Name, IP, or MAC..."
+              className="bg-gray-800 border border-gray-600 rounded px-2 py-0.5 text-xs text-gray-200 placeholder-gray-500 outline-none focus:border-yellow-500 w-44"
+              autoFocus
+            />
+            {searchQuery && searchMatches.length === 0 && (
+              <span className="text-red-400">No match</span>
+            )}
+            {searchQuery && searchMatches.length === 1 && (
+              <span className="text-green-400">1 match</span>
+            )}
+            {searchQuery && searchMatches.length > 1 && (
+              <span className="text-yellow-400 tabular-nums">
+                {(searchMatchIndex % searchMatches.length) + 1}/{searchMatches.length}
+                <span className="text-gray-500 ml-1">↵</span>
+              </span>
+            )}
+            <button
+              onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+              className="text-gray-500 hover:text-gray-300 ml-0.5"
+              title="Close search"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </span>
+        ) : (
+          <button
+            onClick={() => { setSearchOpen(true); setTimeout(() => searchInputRef.current?.focus(), 0); }}
+            className="flex items-center gap-1.5 text-gray-400 hover:text-white transition-colors"
+            title="Search devices (Ctrl+F)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            Search
+          </button>
+        )}
       </div>
       </div>
 
@@ -988,6 +1132,7 @@ export function TopologyMap({ data, sse }: Props) {
               device={deviceMap.get(node.hostname)}
               interactive={snapToGrid}
               highlighted={highlightedId === node.hostname}
+              searchMatch={searchMatchId === node.hostname}
               onHover={handleDeviceHover}
               onMouseDown={(e) => beginDeviceDrag(node.hostname, e)}
               onClick={(e) => handleDeviceClick(node.hostname, e)}
@@ -1073,6 +1218,7 @@ export function TopologyMap({ data, sse }: Props) {
                 key={ad.mac}
                 node={ad}
                 highlighted={highlightedId === ad.mac || highlightedId === ad.seenByHostname}
+                searchMatch={searchMatchId === ad.mac}
                 onMouseEnter={() => setHighlightedId(ad.mac)}
                 onMouseLeave={() => setHighlightedId(pinnedId.current)}
                 onClick={(e) => handleArpClick(ad.mac, tooltip(e), e)}
