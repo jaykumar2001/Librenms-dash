@@ -137,6 +137,11 @@ export function TopologyMap({ data, sse }: Props) {
   // When a transform was restored from localStorage, don't let auto-fit override
   // it — so a refresh preserves the saved zoom/pan. Cleared on Reset Layout.
   const suppressAutoFit = useRef(restoredTransformRef.current != null);
+  // Some user actions reflow the layout (changing initialScale) but should preserve
+  // the current zoom/pan — toggling discovered devices and flipping a site's
+  // orientation. Set just before such an action and consumed by the auto-fit effect
+  // to skip the one resulting re-fit.
+  const skipAutoFitOnceRef = useRef(false);
   // Debounce-write the transform so pan/zoom doesn't hammer localStorage on every frame.
   useTransformPersistence(transform);
 
@@ -212,6 +217,11 @@ export function TopologyMap({ data, sse }: Props) {
   useEffect(() => {
     if (initialScale === lastInitialScaleRef.current) return;
     lastInitialScaleRef.current = initialScale;
+    if (skipAutoFitOnceRef.current) {
+      // Discovered toggle reflowed the layout — keep the user's current zoom/pan.
+      skipAutoFitOnceRef.current = false;
+      return;
+    }
     if (suppressAutoFit.current) return;
     setTransform({ x: 0, y: 0, scale: initialScale });
   }, [initialScale]);
@@ -751,10 +761,18 @@ export function TopologyMap({ data, sse }: Props) {
   const handleReset = useCallback(() => {
     // Reset Layout should also discard a saved zoom/pan and snap back to fit.
     suppressAutoFit.current = false;
+    skipAutoFitOnceRef.current = false;
     clearPersistedTransform();
     resetLayout();
     setTransform({ x: 0, y: 0, scale: initialScale });
   }, [resetLayout, initialScale]);
+
+  const toggleArpDevices = useCallback(() => {
+    // Reflow the layout to make room for discovered devices, but keep the current
+    // zoom/pan instead of snapping back to fit.
+    skipAutoFitOnceRef.current = true;
+    setShowArpDevices((v) => !v);
+  }, [setShowArpDevices]);
 
   // Per-location counts shown in each site header. Neighbor/ARP links are always
   // computed (independent of the visibility toggles); discovered devices come
@@ -826,7 +844,7 @@ export function TopologyMap({ data, sse }: Props) {
           ARP ({arpLinks.length})
         </button>
         <button
-          onClick={() => setShowArpDevices((v) => !v)}
+          onClick={toggleArpDevices}
           className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded transition-colors ${
             showArpDevices ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-500"
           }`}
@@ -855,15 +873,11 @@ export function TopologyMap({ data, sse }: Props) {
                 visible ? "bg-gray-700 text-white" : "bg-gray-800 text-gray-500"
               }`}
             >
-              <span
-                className="w-3 h-0.5 inline-block rounded self-center"
-                style={{ backgroundColor: color, opacity: visible ? 1 : 0.3 }}
-              />
-              <span className="flex flex-col leading-tight">
+              <span className="flex flex-col items-start leading-tight">
                 <span>{o.label.replace(/\s*\(.*\)\s*$/, "")} ({o.links.length}){o.hub ? " ⭐" : ""}</span>
                 <span
-                  className="text-[9px] font-mono opacity-70"
-                  style={{ color: visible ? color : undefined }}
+                  className="text-[10px] font-mono font-bold"
+                  style={{ color: visible ? color : undefined, opacity: visible ? 1 : 0.5 }}
                 >{o.subnet}</span>
               </span>
             </button>
@@ -1260,6 +1274,9 @@ export function TopologyMap({ data, sse }: Props) {
               index={i}
               onToggleOrientation={(e) => {
                 e.stopPropagation();
+                // Re-orienting reflows the layout (changing initialScale) — keep the
+                // user's current zoom/pan instead of snapping back to fit.
+                skipAutoFitOnceRef.current = true;
                 toggleSiteOrientation(site.id);
               }}
             />

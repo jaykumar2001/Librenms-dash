@@ -100,6 +100,17 @@ export function usePersistedLayout() {
     writeStorage(cacheRef.current);
   }, []);
 
+  // Swap a persisted box's width/height (no-op if the site has no saved size).
+  // An A4-portrait box (w, w·√2) becomes A4-landscape (w·√2, w) and vice-versa,
+  // so a manually-resized box stays locked to the ratio across an orientation flip.
+  const swapSiteSize = useCallback((siteId: string) => {
+    const p = cacheRef.current.sitePositions[siteId];
+    if (!p) return;
+    const next = { ...cacheRef.current.sitePositions, [siteId]: { ...p, width: p.height, height: p.width } };
+    cacheRef.current = { ...cacheRef.current, sitePositions: next };
+    writeStorage(cacheRef.current);
+  }, []);
+
   // Persist a single site orientation change.
   const saveSiteOrientation = useCallback((siteId: string, orientation: SiteOrientation) => {
     const next = { ...cacheRef.current.siteOrientations, [siteId]: orientation };
@@ -120,6 +131,7 @@ export function usePersistedLayout() {
     saveSitePositions,
     saveNodePositions,
     saveSiteOrientation,
+    swapSiteSize,
     clearPersistedLayout,
   };
 }
