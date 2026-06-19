@@ -4,6 +4,7 @@ import type { ArpDeviceLayoutNode } from "@/hooks/useForceLayout";
 interface Props {
   node: ArpDeviceLayoutNode;
   highlighted?: boolean;
+  searchMatch?: boolean;
   onMouseEnter?: (e: React.MouseEvent) => void;
   onMouseLeave?: () => void;
   onClick?: (e: React.MouseEvent) => void;
@@ -12,7 +13,7 @@ interface Props {
 const BOX_W = 132;
 const BOX_H = 42;
 
-export function ArpDeviceNode({ node, highlighted, onMouseEnter, onMouseLeave, onClick }: Props) {
+export function ArpDeviceNode({ node, highlighted, searchMatch, onMouseEnter, onMouseLeave, onClick }: Props) {
   const [isHovered, setIsHovered] = useState(false);
   const x = node.x - BOX_W / 2;
   const y = node.y - BOX_H / 2;
@@ -22,6 +23,7 @@ export function ArpDeviceNode({ node, highlighted, onMouseEnter, onMouseLeave, o
   const ipDisplay = node.ips.length > 1
     ? `${node.ips[0]} +${node.ips.length - 1}`
     : node.ips[0] ?? "";
+  const active = isHovered || highlighted || searchMatch;
 
   const handleEnter = useCallback((e: React.MouseEvent) => {
     setIsHovered(true);
@@ -40,26 +42,41 @@ export function ArpDeviceNode({ node, highlighted, onMouseEnter, onMouseLeave, o
       onClick={onClick}
       style={{ cursor: "pointer" }}
     >
+      {searchMatch && (
+        <rect
+          x={x - 6}
+          y={y - 6}
+          width={BOX_W + 12}
+          height={BOX_H + 12}
+          rx={9}
+          fill="#facc15"
+          fillOpacity={0.08}
+          stroke="#facc15"
+          strokeWidth={2}
+          className="search-match-glow"
+        />
+      )}
       <rect
         x={x}
         y={y}
         width={BOX_W}
         height={BOX_H}
         rx={6}
-        fill={isHovered || highlighted ? "#1e293b" : "#0f172a"}
-        fillOpacity={isHovered ? 0.88 : highlighted ? 0.8 : 0.65}
-        stroke="#fbbf24"
-        strokeWidth={isHovered || highlighted ? 1.5 : 1}
-        strokeOpacity={isHovered || highlighted ? 0.8 : 0.4}
+        fill={active ? "#1e293b" : "#0f172a"}
+        fillOpacity={searchMatch ? 0.95 : isHovered ? 0.88 : highlighted ? 0.8 : 0.65}
+        stroke={searchMatch ? "#facc15" : "#fbbf24"}
+        strokeWidth={searchMatch ? 2.5 : active ? 1.5 : 1}
+        strokeOpacity={active ? 0.8 : 0.4}
+        className={searchMatch ? "search-match-box" : undefined}
       />
       {/* Vendor */}
       <text
         x={x + 5}
         y={y + 12}
-        fill="#fbbf24"
+        fill={searchMatch ? "#facc15" : "#fbbf24"}
         fillOpacity={0.9}
-        fontSize={8.5}
-        fontWeight={600}
+        fontSize={searchMatch ? 9.5 : 8.5}
+        fontWeight={searchMatch ? 700 : 600}
         fontFamily="system-ui, sans-serif"
       >
         {vendorShort || "Unknown"}
