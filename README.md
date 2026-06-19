@@ -25,7 +25,8 @@
 - MAC vendor lookups via IEEE OUI databases
 - Drag, snap, resize, and orientation controls for site boxes
 - Pinch and scroll zoom with persisted viewport
-<img width="1506" height="738" alt="Librenms-Dash" src="https://github.com/user-attachments/assets/d46b4d37-1ac9-44b1-adfb-a6fe19c2f208" />
+
+<img width="1510" height="745" alt="image" src="https://github.com/user-attachments/assets/3d73dc35-7e06-448d-9979-1eb95d8d036b" />
 
 ## Repository Layout
 
