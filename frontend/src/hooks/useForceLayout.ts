@@ -488,20 +488,6 @@ function fitSitesToDeviceGroups(sites: SiteCluster[], nextGroups: DeviceGroup[])
   });
 }
 
-function getSiteContentMinSize(siteId: string, groups: DeviceGroup[], site?: SiteCluster): { width: number; height: number } {
-  const siteGroups = groups.filter((group) => group.siteId === siteId);
-  const floorH = SITE_LABEL_H + SITE_PAD * 2;
-  if (siteGroups.length === 0 || !site) {
-    return { width: 160, height: floorH };
-  }
-
-  // The narrowest the content can reflow to is a single device column — return that
-  // as the floor (NOT the current footprint) so a resize can pack the grid into
-  // fewer columns and the box can actually shrink. reflowSiteContents enforces the
-  // true content-fit for the chosen width and the A4 re-snap finalises the shape.
-  return { width: NODE_W + GROUP_PAD * 2 + SITE_PAD * 2, height: floorH };
-}
-
 function reflowSiteContents(
   site: SiteCluster,
   nextWidth: number,
@@ -856,11 +842,10 @@ export function useForceLayout(
     const restoredNodes = persist.applyNodePositions(result.nodes);
     const restoredGroups = fitDeviceGroupsToNodes(result.deviceGroups, restoredNodes);
     // Size each site elastically to its current managed content (A4 of the restored
-    // device groups), discarding any stale persisted size. This is what lets a box
-    // that grew to fit discovered devices SHRINK back to the smallest size enclosing
-    // the device boxes once discovered devices are toggled off. Position follows the
-    // content (which moves with the user's drags), so manual placement is preserved.
-    const restoredSites = fitSitesToDeviceGroups(persist.applySitePositions(result.sites), restoredGroups);
+    // device groups) so a box that grew for discovered devices shrinks back once they
+    // are toggled off; then apply any manually-resized SIZE on top (free, non-A4) so a
+    // user's resize sticks. Position follows the content, so placement is preserved.
+    const restoredSites = persist.applySitePositions(fitSitesToDeviceGroups(result.sites, restoredGroups));
     // ARP discovered-device boxes are placed relative to the restored site/group
     // positions and the site grows (again) to enclose them while they're shown.
     const arp = relayoutArpNodes(restoredSites, restoredGroups, result.arpDeviceNodes);
@@ -912,8 +897,8 @@ export function useForceLayout(
       persist.saveSiteOrientation(siteId, next[siteId]);
       return next;
     });
-    // Flip a manually-resized box's A4 dimensions to the new orientation so it stays
-    // locked to the ratio (no-op for sites still using the auto A4 layout).
+    // Rotate a manually-resized box's dimensions with the orientation flip (no-op for
+    // sites still using the auto elastic layout).
     persist.swapSiteSize(siteId);
   }, []);
 
@@ -933,9 +918,8 @@ export function useForceLayout(
     // Push the other sites out of the dragged site's way (it stays under the cursor).
     const r = resolveCollisions(movedSites, movedGroups, movedNodes, movedArp, { site: siteId });
 
-    // Persist only the dragged site; neighbours move in-memory until the user drags
-    // them, so the saved layout stays the user's own arrangement.
-    persist.saveSitePositions(r.sites.filter((s) => s.id === siteId));
+    // Persist the dragged site's node positions only — the box position is derived
+    // from its content, so this preserves placement without pinning the box size.
     persist.saveNodePositions(r.nodes.filter((n) => n.siteId === siteId));
     setSites(r.sites);
     setDeviceGroups(r.groups);
@@ -956,7 +940,6 @@ export function useForceLayout(
     const r = resolveCollisions(arp.sites, nextGroups, nextNodes, arp.arpNodes, { node: hostname });
 
     persist.saveNodePositions(r.nodes.filter((n) => n.hostname === hostname));
-    persist.saveSitePositions(r.sites);
     setNodes(r.nodes);
     setDeviceGroups(r.groups);
     setSites(r.sites);
@@ -968,27 +951,30 @@ export function useForceLayout(
     const site = sitesRef.current.find((candidate) => candidate.id === siteId);
     if (!site) return;
 
-    const minSize = getSiteContentMinSize(siteId, deviceGroupsRef.current, site);
-    // Lock the box to A4: build the smallest A4 box (for this orientation) that
-    // contains both the drag target and the content minimum, reflow into it, then
-    // re-snap in case the reflow had to grow the box to fit content.
-    const want = toA4(Math.max(width, minSize.width), Math.max(height, minSize.height), site.orientation);
+    // Free resize: the box becomes the dragged size (floored so content isn't
+    // clipped), with width/height independent — no A4 lock. Content reflows to fit.
+    const floorW = NODE_W + GROUP_PAD * 2 + SITE_PAD * 2;
+    const floorH = SITE_LABEL_H + SITE_PAD * 2;
     const result = reflowSiteContents(
       site,
-      want.w,
-      want.h,
+      Math.max(width, floorW),
+      Math.max(height, floorH),
       nodesRef.current,
       deviceGroupsRef.current,
     );
-    const finalA4 = toA4(result.site.width, result.site.height, site.orientation);
-    const a4Site = { ...result.site, width: finalA4.w, height: finalA4.h };
+    // reflowSiteContents returns max(dragged, content-fit), so the box never clips
+    // its devices. This managed size is what gets persisted (without any discovered
+    // section, which is re-added elastically below).
+    const managedSite = result.site;
 
-    const resizedSites = sitesRef.current.map((candidate) => candidate.id === siteId ? a4Site : candidate);
+    const resizedSites = sitesRef.current.map((candidate) => candidate.id === siteId ? managedSite : candidate);
     const arp = relayoutArpNodes(resizedSites, result.groups, arpDeviceNodesRef.current);
-    // Push neighbours out of the way of the enlarged box (it stays anchored).
+    // Push neighbours out of the way of the resized box (it stays anchored).
     const r = resolveCollisions(arp.sites, result.groups, result.nodes, arp.arpNodes, { site: siteId });
 
-    persist.saveSitePositions(r.sites.filter((s) => s.id === siteId));
+    // Persist the managed (pre-discovered) size so it sticks across refreshes and
+    // discovered toggles; the elastic layout re-adds the discovered section on top.
+    persist.saveSitePositions([managedSite]);
     persist.saveNodePositions(r.nodes.filter((n) => n.siteId === siteId));
     setSites(r.sites);
     setDeviceGroups(r.groups);

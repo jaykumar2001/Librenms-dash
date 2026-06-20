@@ -56,12 +56,14 @@ export function usePersistedLayout() {
 
   // Apply saved positions onto a freshly-computed site array.
   // Sites whose IDs aren't in storage keep their computed positions.
+  // Restore only the manually-resized SIZE; position is always derived from the
+  // (content-driven) auto-layout so site boxes stay elastic and follow their devices.
   const applySitePositions = useCallback((sites: SiteCluster[]): SiteCluster[] => {
     const saved = cacheRef.current.sitePositions;
     return sites.map((site) => {
       const p = saved[site.id];
       if (!p) return site;
-      return { ...site, x: p.x, y: p.y, width: p.width, height: p.height };
+      return { ...site, width: p.width, height: p.height };
     });
   }, []);
 
