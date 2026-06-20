@@ -56,12 +56,14 @@ export function usePersistedLayout() {
 
   // Apply saved positions onto a freshly-computed site array.
   // Sites whose IDs aren't in storage keep their computed positions.
+  // Restore only the manually-resized SIZE; position is always derived from the
+  // (content-driven) auto-layout so site boxes stay elastic and follow their devices.
   const applySitePositions = useCallback((sites: SiteCluster[]): SiteCluster[] => {
     const saved = cacheRef.current.sitePositions;
     return sites.map((site) => {
       const p = saved[site.id];
       if (!p) return site;
-      return { ...site, x: p.x, y: p.y, width: p.width, height: p.height };
+      return { ...site, width: p.width, height: p.height };
     });
   }, []);
 
@@ -100,6 +102,17 @@ export function usePersistedLayout() {
     writeStorage(cacheRef.current);
   }, []);
 
+  // Swap a persisted box's width/height (no-op if the site has no saved size).
+  // An A4-portrait box (w, w·√2) becomes A4-landscape (w·√2, w) and vice-versa,
+  // so a manually-resized box stays locked to the ratio across an orientation flip.
+  const swapSiteSize = useCallback((siteId: string) => {
+    const p = cacheRef.current.sitePositions[siteId];
+    if (!p) return;
+    const next = { ...cacheRef.current.sitePositions, [siteId]: { ...p, width: p.height, height: p.width } };
+    cacheRef.current = { ...cacheRef.current, sitePositions: next };
+    writeStorage(cacheRef.current);
+  }, []);
+
   // Persist a single site orientation change.
   const saveSiteOrientation = useCallback((siteId: string, orientation: SiteOrientation) => {
     const next = { ...cacheRef.current.siteOrientations, [siteId]: orientation };
@@ -120,6 +133,7 @@ export function usePersistedLayout() {
     saveSitePositions,
     saveNodePositions,
     saveSiteOrientation,
+    swapSiteSize,
     clearPersistedLayout,
   };
 }

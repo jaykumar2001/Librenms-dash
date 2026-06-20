@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import type { TopologyResponse, DeviceSummary, ArpDiscoveredDevice } from "@librenms-dash/shared";
 import { usePersistedLayout } from "./usePersistedLayout";
+import { separateBoxes, anyOverlap } from "./layout/separation";
 
 export interface LayoutNode {
   id: string;
@@ -97,6 +98,22 @@ const ARP_SECTION_PAD = 8;
 
 export type SiteOrientation = "landscape" | "portrait";
 
+// Site boxes are locked to A4 paper proportions: the long side is √2× the short
+// side. Portrait => height = width · √2; landscape => width = height · √2.
+const A4_RATIO = Math.SQRT2;
+
+// Expand a content box to the smallest A4-proportioned box (for the given
+// orientation) that still contains it. Content stays anchored top-left; the box
+// gains whitespace on the bottom (portrait) or right (landscape).
+function toA4(contentW: number, contentH: number, orientation: SiteOrientation): { w: number; h: number } {
+  if (orientation === "portrait") {
+    const w = Math.max(contentW, contentH / A4_RATIO);
+    return { w, h: w * A4_RATIO };
+  }
+  const h = Math.max(contentH, contentW / A4_RATIO);
+  return { w: h * A4_RATIO, h };
+}
+
 // How many columns for N devices in a group row
 function groupCols(n: number): number {
   if (n <= 2) return n;
@@ -188,6 +205,7 @@ function layoutAll(
     groupPositions: Array<{ gx: number; gy: number }>;
     siteW: number;
     siteH: number;
+    contentH: number;
     arpSectionH: number;
     arpCols: number;
     totalH: number;
@@ -203,7 +221,10 @@ function layoutAll(
     }
     const groups = [...osBuckets.values()].map((devices) => layoutGroup(devices, orientation));
     groups.sort((a, b) => b.devices.length - a.devices.length);
-    const { siteW, siteH, groupPositions } = layoutSite(groups, orientation);
+    const { siteW: contentW, siteH: contentH, groupPositions } = layoutSite(groups, orientation);
+    // Lock the managed-device box to A4 proportions; the device grid stays
+    // top-left and the box gains whitespace to reach the ratio.
+    const { w: siteW, h: siteH } = toA4(contentW, contentH, orientation);
 
     const siteArpDevices = arpDevicesBySite.get(site.id) ?? [];
     let arpSectionH = 0;
@@ -214,7 +235,12 @@ function layoutAll(
       arpSectionH = ARP_SECTION_LABEL_H + ARP_SECTION_PAD * 2 + arpRows * ARP_NODE_H + Math.max(0, arpRows - 1) * ARP_NODE_GAP_Y + GROUP_GAP;
     }
 
-    sitePreLayout.push({ site, orientation, groups, groupPositions, siteW, siteH, arpSectionH, arpCols, totalH: siteH + arpSectionH });
+    // Discovered devices are placed directly below the managed-device content (see
+    // relayoutArpNodes), not below the A4 box bottom. Row spacing must reserve the
+    // height relayoutArpNodes will actually produce, or boxes overlap the row below
+    // when discovered is shown. With discovered off, the box is the exact A4 height.
+    const totalH = arpSectionH > 0 ? Math.max(siteH, contentH + SITE_PAD + arpSectionH) : siteH;
+    sitePreLayout.push({ site, orientation, groups, groupPositions, siteW, siteH, contentH, arpSectionH, arpCols, totalH });
   }
 
   // Determine placement: try to fit all sites within viewW × viewH.
@@ -238,6 +264,10 @@ function layoutAll(
     }
     sitePositions.push({ x: curSiteX, y: curSiteY });
     curSiteX += pre.siteW + SITE_GAP;
+    // Place rows using the full site height (including the discovered/ARP section)
+    // so boxes never overlap the row below when discovered devices are shown. The
+    // viewport's zoom/pan is preserved separately (see skipAutoFitOnceRef in
+    // TopologyMap) so this reflow doesn't snap the user's view back to fit.
     siteRowH = Math.max(siteRowH, pre.totalH);
   }
 
@@ -272,7 +302,7 @@ function layoutAll(
   for (let si = 0; si < sitePreLayout.length; si++) {
     const pre = sitePreLayout[si];
     const pos = sitePositions[si];
-    const { site, groups, groupPositions, siteW, siteH, arpCols } = pre;
+    const { site, groups, groupPositions, siteW, contentH, arpCols } = pre;
 
     // All coordinates are in natural (unscaled) layout space.
     // The caller applies initialScale as a uniform SVG transform so that
@@ -329,7 +359,7 @@ function layoutAll(
     // Place ARP discovered devices below the managed device groups
     const siteArpDevices = arpDevicesBySite.get(site.id) ?? [];
     if (showArpDevices && siteArpDevices.length > 0) {
-      const arpStartY = siteY + siteH + GROUP_GAP;
+      const arpStartY = siteY + contentH + GROUP_GAP;
       const arpStartX = siteX + SITE_PAD + ARP_SECTION_PAD;
 
       siteArpDevices.forEach((ad, i) => {
@@ -444,127 +474,34 @@ function fitSitesToDeviceGroups(sites: SiteCluster[], nextGroups: DeviceGroup[])
     const x = minX - SITE_PAD;
     const y = minY - SITE_LABEL_H - SITE_PAD;
 
+    const contentW = Math.max(maxX + SITE_PAD - x, 160);
+    const contentH = Math.max(maxY + SITE_PAD - y, SITE_LABEL_H + SITE_PAD * 2);
+    const a4 = toA4(contentW, contentH, site.orientation);
+
     return {
       ...site,
       x,
       y,
-      width: Math.max(maxX + SITE_PAD - x, 160),
-      height: Math.max(maxY + SITE_PAD - y, SITE_LABEL_H + SITE_PAD * 2),
+      width: a4.w,
+      height: a4.h,
     };
   });
 }
 
-function getSiteContentMinSize(siteId: string, groups: DeviceGroup[], site?: SiteCluster): { width: number; height: number } {
-  const siteGroups = groups.filter((group) => group.siteId === siteId);
-  if (siteGroups.length === 0 || !site) {
-    return { width: 160, height: SITE_LABEL_H + SITE_PAD * 2 };
-  }
+// Smallest box (anchored at the site's top-left) that tightly encloses the site's
+// managed device groups plus padding — i.e. the A4 whitespace removed. Used by
+// manual resize: the box may shrink down to this, never below it, so devices keep
+// their positions and gaps and can never end up outside the box.
+function tightSiteSize(site: SiteCluster, siteGroups: DeviceGroup[]): { width: number; height: number } {
+  const floorW = NODE_W + GROUP_PAD * 2 + SITE_PAD * 2;
+  const floorH = SITE_LABEL_H + SITE_PAD * 2;
+  if (siteGroups.length === 0) return { width: floorW, height: floorH };
 
-  const maxRight = Math.max(...siteGroups.map((group) => group.x + group.width));
-  const maxBottom = Math.max(...siteGroups.map((group) => group.y + group.height));
+  const maxRight = Math.max(...siteGroups.map((g) => g.x + g.width));
+  const maxBottom = Math.max(...siteGroups.map((g) => g.y + g.height));
   return {
-    width: Math.max(maxRight - site.x + SITE_PAD, 160),
-    height: Math.max(maxBottom - site.y + SITE_PAD, SITE_LABEL_H + SITE_PAD * 2),
-  };
-}
-
-function reflowSiteContents(
-  site: SiteCluster,
-  nextWidth: number,
-  nextHeight: number,
-  currentNodes: LayoutNode[],
-  currentGroups: DeviceGroup[],
-): { site: SiteCluster; nodes: LayoutNode[]; groups: DeviceGroup[] } {
-  const siteGroups = currentGroups
-    .filter((group) => group.siteId === site.id)
-    .sort((a, b) => {
-      const countA = currentNodes.filter((node) => node.siteId === a.siteId && node.os === a.os).length;
-      const countB = currentNodes.filter((node) => node.siteId === b.siteId && node.os === b.os).length;
-      return countB - countA;
-    });
-
-  if (siteGroups.length === 0) {
-    return {
-      site: { ...site, width: Math.max(nextWidth, 160), height: Math.max(nextHeight, SITE_LABEL_H + SITE_PAD * 2) },
-      nodes: currentNodes,
-      groups: currentGroups,
-    };
-  }
-
-  const maxContentW = Math.max(nextWidth - SITE_PAD * 2, NODE_W + GROUP_PAD * 2);
-  const updatedNodes = [...currentNodes];
-  const updatedGroupMap = new Map<string, DeviceGroup>();
-
-  let curX = site.x + SITE_PAD;
-  let curY = site.y + SITE_LABEL_H + SITE_PAD;
-  let rowH = 0;
-  let maxRight = site.x + SITE_PAD;
-  let maxBottom = site.y + SITE_LABEL_H + SITE_PAD;
-
-  for (const group of siteGroups) {
-    const groupNodes = updatedNodes
-      .filter((node) => node.siteId === site.id && node.os === group.os)
-      .sort((a, b) => a.hostname.localeCompare(b.hostname));
-
-    if (groupNodes.length === 0) continue;
-
-    const maxCols = Math.max(1, Math.floor((maxContentW - GROUP_PAD * 2 + NODE_GAP_X) / (NODE_W + NODE_GAP_X)));
-    const lCols = groupCols(groupNodes.length);
-    const lRows = Math.ceil(groupNodes.length / lCols);
-    const cols = site.orientation === "portrait"
-      ? Math.min(lRows, maxCols)
-      : Math.min(groupNodes.length, maxCols);
-    const rows = Math.ceil(groupNodes.length / cols);
-    const baseW = GROUP_PAD * 2 + cols * NODE_W;
-    const availableGapX = maxContentW - baseW;
-    const gapX = cols > 1 ? Math.max(NODE_GAP_X, availableGapX / (cols - 1)) : 0;
-    const groupW = Math.min(maxContentW, GROUP_PAD * 2 + cols * NODE_W + Math.max(0, cols - 1) * gapX);
-    const groupH = GROUP_LABEL_H + GROUP_PAD * 2 + rows * NODE_H + Math.max(0, rows - 1) * NODE_GAP_Y;
-
-    if (curX + groupW > site.x + nextWidth - SITE_PAD && curX > site.x + SITE_PAD) {
-      curX = site.x + SITE_PAD;
-      curY += rowH + GROUP_GAP;
-      rowH = 0;
-    }
-
-    updatedGroupMap.set(`${group.siteId}:${group.os}`, {
-      ...group,
-      x: curX,
-      y: curY,
-      width: groupW,
-      height: groupH,
-    });
-
-    groupNodes.forEach((node, index) => {
-      const nodeIndex = updatedNodes.findIndex((candidate) => candidate.hostname === node.hostname);
-      if (nodeIndex < 0) return;
-      const col = index % cols;
-      const row = Math.floor(index / cols);
-      updatedNodes[nodeIndex] = {
-        ...updatedNodes[nodeIndex],
-        x: curX + GROUP_PAD + NODE_W / 2 + col * (NODE_W + gapX),
-        y: curY + GROUP_LABEL_H + GROUP_PAD + NODE_H / 2 + row * (NODE_H + NODE_GAP_Y),
-      };
-    });
-
-    maxRight = Math.max(maxRight, curX + groupW);
-    maxBottom = Math.max(maxBottom, curY + groupH);
-    curX += groupW + GROUP_GAP;
-    rowH = Math.max(rowH, groupH);
-  }
-
-  const updatedGroups = currentGroups.map((group) => updatedGroupMap.get(`${group.siteId}:${group.os}`) ?? group);
-  const minWidth = maxRight - site.x + SITE_PAD;
-  const minHeight = maxBottom - site.y + SITE_PAD;
-
-  return {
-    site: {
-      ...site,
-      width: Math.max(nextWidth, minWidth, 160),
-      height: Math.max(nextHeight, minHeight, SITE_LABEL_H + SITE_PAD * 2),
-    },
-    nodes: updatedNodes,
-    groups: updatedGroups,
+    width: Math.max(maxRight + SITE_PAD - site.x, floorW),
+    height: Math.max(maxBottom + SITE_PAD - site.y, floorH),
   };
 }
 
@@ -629,6 +566,106 @@ function relayoutArpNodes(
   });
 
   return { sites: nextSites, arpNodes: placed };
+}
+
+// Grow each site box (never shrink) so it encloses all its device groups and
+// discovered boxes plus padding. Keeps the box's position/size when its content
+// already fits (so the A4 size is preserved); only expands when collision
+// separation has pushed a child past the current border.
+function fitSitesToContents(
+  sites: SiteCluster[],
+  groups: DeviceGroup[],
+  arpNodes: ArpDeviceLayoutNode[],
+): SiteCluster[] {
+  return sites.map((site) => {
+    const sg = groups.filter((g) => g.siteId === site.id);
+    const sa = arpNodes.filter((a) => a.siteId === site.id);
+    if (sg.length === 0 && sa.length === 0) return site;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const g of sg) {
+      minX = Math.min(minX, g.x); minY = Math.min(minY, g.y);
+      maxX = Math.max(maxX, g.x + g.width); maxY = Math.max(maxY, g.y + g.height);
+    }
+    for (const a of sa) {
+      minX = Math.min(minX, a.x - ARP_NODE_W / 2); minY = Math.min(minY, a.y - ARP_NODE_H / 2);
+      maxX = Math.max(maxX, a.x + ARP_NODE_W / 2); maxY = Math.max(maxY, a.y + ARP_NODE_H / 2);
+    }
+
+    const x = Math.min(site.x, minX - SITE_PAD);
+    const y = Math.min(site.y, minY - SITE_LABEL_H - SITE_PAD);
+    const right = Math.max(site.x + site.width, maxX + SITE_PAD);
+    const bottom = Math.max(site.y + site.height, maxY + SITE_PAD);
+    return { ...site, x, y, width: right - x, height: bottom - y };
+  });
+}
+
+interface CollisionAnchor {
+  /** Site whose box must not move (the one being dragged/resized). */
+  site?: string;
+  /** Device node whose box must not move (the one being dragged). */
+  node?: string;
+}
+
+// Push overlapping boxes apart with minimal displacement, preserving the overall
+// arrangement. Two scopes: device nodes within each site, then site boxes against
+// each other (carrying their contents along). Idempotent — a non-overlapping layout
+// is returned unchanged via the fast-path guard.
+function resolveCollisions(
+  sites: SiteCluster[],
+  groups: DeviceGroup[],
+  nodes: LayoutNode[],
+  arpNodes: ArpDeviceLayoutNode[],
+  anchor?: CollisionAnchor,
+): { sites: SiteCluster[]; groups: DeviceGroup[]; nodes: LayoutNode[]; arpNodes: ArpDeviceLayoutNode[] } {
+  let S = sites, G = groups, N = nodes, A = arpNodes;
+
+  const nodesBySite = new Map<string, LayoutNode[]>();
+  for (const n of N) {
+    if (!nodesBySite.has(n.siteId)) nodesBySite.set(n.siteId, []);
+    nodesBySite.get(n.siteId)!.push(n);
+  }
+  const nodeBox = (n: LayoutNode) => ({ id: n.hostname, x: n.x - NODE_W / 2, y: n.y - NODE_H / 2, width: NODE_W, height: NODE_H });
+
+  // Intra-site device overlaps only happen after a manual device drop; detect cheaply.
+  let intraOverlap = false;
+  for (const list of nodesBySite.values()) {
+    if (list.length > 1 && anyOverlap(list.map(nodeBox))) { intraOverlap = true; break; }
+  }
+  const siteBox = (s: SiteCluster) => ({ id: s.id, x: s.x, y: s.y, width: s.width, height: s.height });
+  if (!intraOverlap && !anyOverlap(S.map(siteBox), SITE_GAP)) {
+    return { sites: S, groups: G, nodes: N, arpNodes: A }; // nothing to resolve
+  }
+
+  // 1. Separate overlapping device nodes within each site, then refit borders, the
+  //    discovered section, and grow the site to enclose the result.
+  if (intraOverlap) {
+    const nodeDisp = new Map<string, { dx: number; dy: number }>();
+    for (const list of nodesBySite.values()) {
+      if (list.length < 2) continue;
+      const disp = separateBoxes(list.map(nodeBox), { margin: NODE_GAP_X, anchorId: anchor?.node });
+      for (const [id, d] of disp) nodeDisp.set(id, d);
+    }
+    if (nodeDisp.size > 0) {
+      N = N.map((n) => { const d = nodeDisp.get(n.hostname); return d ? { ...n, x: n.x + d.dx, y: n.y + d.dy } : n; });
+      G = fitDeviceGroupsToNodes(G, N);
+      const re = relayoutArpNodes(S, G, A);
+      S = fitSitesToContents(re.sites, G, re.arpNodes);
+      A = re.arpNodes;
+    }
+  }
+
+  // 2. Separate site boxes; translate each site's contents by the same vector.
+  for (let iter = 0; iter < 8; iter++) {
+    const disp = separateBoxes(S.map(siteBox), { margin: SITE_GAP, anchorId: anchor?.site });
+    if (disp.size === 0) break;
+    S = S.map((s) => { const d = disp.get(s.id); return d ? { ...s, x: s.x + d.dx, y: s.y + d.dy } : s; });
+    G = G.map((g) => { const d = disp.get(g.siteId); return d ? { ...g, x: g.x + d.dx, y: g.y + d.dy } : g; });
+    N = N.map((n) => { const d = disp.get(n.siteId); return d ? { ...n, x: n.x + d.dx, y: n.y + d.dy } : n; });
+    A = A.map((a) => { const d = disp.get(a.siteId); return d ? { ...a, x: a.x + d.dx, y: a.y + d.dy } : a; });
+  }
+
+  return { sites: S, groups: G, nodes: N, arpNodes: A };
 }
 
 // Identifies the structural shape of the topology (which sites/devices/arp devices
@@ -719,30 +756,38 @@ export function useForceLayout(
     const result = layoutAll(effectiveData, containerWidth, siteOrientations, showArpDevices, containerHeight, topReserve);
     // Overlay saved positions on top of freshly-computed ones so manual drags
     // and resizes from a previous session are restored after reload.
-    const restoredSites = persist.applySitePositions(result.sites);
     const restoredNodes = persist.applyNodePositions(result.nodes);
-    // Links and device-group borders are derived from node positions. The freshly
-    // built links/groups still point at the pre-restore node coordinates, so rebind
-    // links to the restored nodes and refit the group borders — otherwise overlay
-    // lines and category boxes snap back to their original spots on refresh.
-    const restoredNodeMap = new Map(restoredNodes.map((n) => [n.hostname, n]));
+    const restoredGroups = fitDeviceGroupsToNodes(result.deviceGroups, restoredNodes);
+    // Size each site elastically to its current managed content (A4 of the restored
+    // device groups) so a box that grew for discovered devices shrinks back once they
+    // are toggled off; then apply any manually-resized SIZE on top (free, non-A4) so a
+    // user's resize sticks. Position follows the content, so placement is preserved.
+    const restoredSites = persist.applySitePositions(fitSitesToDeviceGroups(result.sites, restoredGroups));
+    // ARP discovered-device boxes are placed relative to the restored site/group
+    // positions and the site grows (again) to enclose them while they're shown.
+    const arp = relayoutArpNodes(restoredSites, restoredGroups, result.arpDeviceNodes);
+
+    // Dynamically push apart any boxes the saved layout would render overlapping
+    // (e.g. a manual layout that can't accommodate the discovered-devices section),
+    // preserving the user's arrangement instead of discarding it.
+    const resolved = resolveCollisions(arp.sites, restoredGroups, restoredNodes, arp.arpNodes);
+
+    // Links and device-group borders are derived from node positions, so rebind the
+    // links to the resolved node coordinates — otherwise overlay lines snap back.
+    const resolvedNodeMap = new Map(resolved.nodes.map((n) => [n.hostname, n]));
     const rebind = <T extends { source: LayoutNode; target: LayoutNode }>(link: T): T => ({
       ...link,
-      source: restoredNodeMap.get(link.source.hostname) ?? link.source,
-      target: restoredNodeMap.get(link.target.hostname) ?? link.target,
+      source: resolvedNodeMap.get(link.source.hostname) ?? link.source,
+      target: resolvedNodeMap.get(link.target.hostname) ?? link.target,
     });
-    const restoredGroups = fitDeviceGroupsToNodes(result.deviceGroups, restoredNodes);
-    // ARP discovered-device boxes are placed relative to the restored site/group
-    // positions and the site grows to enclose them. They were set straight from
-    // the fresh layout (original site coords), so they snapped back on refresh.
-    const arp = relayoutArpNodes(restoredSites, restoredGroups, result.arpDeviceNodes);
-    setSites(arp.sites);
-    setNodes(restoredNodes);
+
+    setSites(resolved.sites);
+    setNodes(resolved.nodes);
     setLinks(result.links.map(rebind));
     setNeighborLinks(result.neighborLinks.map(rebind));
     setArpLinks(result.arpLinks.map(rebind));
-    setArpDeviceNodes(arp.arpNodes);
-    setDeviceGroups(restoredGroups);
+    setArpDeviceNodes(resolved.arpNodes);
+    setDeviceGroups(resolved.groups);
     setInitialScale(result.initialScale);
   }, [data, containerWidth, containerHeight, siteOrientations, showArpDevices, topReserve, isDragging]);
 
@@ -769,30 +814,35 @@ export function useForceLayout(
       persist.saveSiteOrientation(siteId, next[siteId]);
       return next;
     });
+    // Rotate a manually-resized box's dimensions with the orientation flip (no-op for
+    // sites still using the auto elastic layout).
+    persist.swapSiteSize(siteId);
   }, []);
 
   const moveSite = useCallback((siteId: string, dx: number, dy: number) => {
-    setSites((prev) => {
-      const next = prev.map((site) =>
-        site.id === siteId ? { ...site, x: site.x + dx, y: site.y + dy } : site,
-      );
-      persist.saveSitePositions(next.filter((s) => s.id === siteId));
-      return next;
-    });
-    setDeviceGroups((prev) => prev.map((group) => (
-      group.siteId === siteId ? { ...group, x: group.x + dx, y: group.y + dy } : group
-    )));
-    setArpDeviceNodes((prev) => prev.map((ad) => (
-      ad.siteId === siteId ? { ...ad, x: ad.x + dx, y: ad.y + dy } : ad
-    )));
-    setNodes((prev) => {
-      const nextNodes = prev.map((node) => (
-        node.siteId === siteId ? { ...node, x: node.x + dx, y: node.y + dy } : node
-      ));
-      persist.saveNodePositions(nextNodes.filter((n) => n.siteId === siteId));
-      relinkNodes(nextNodes);
-      return nextNodes;
-    });
+    const movedSites = sitesRef.current.map((s) => (
+      s.id === siteId ? { ...s, x: s.x + dx, y: s.y + dy } : s
+    ));
+    const movedGroups = deviceGroupsRef.current.map((g) => (
+      g.siteId === siteId ? { ...g, x: g.x + dx, y: g.y + dy } : g
+    ));
+    const movedArp = arpDeviceNodesRef.current.map((a) => (
+      a.siteId === siteId ? { ...a, x: a.x + dx, y: a.y + dy } : a
+    ));
+    const movedNodes = nodesRef.current.map((n) => (
+      n.siteId === siteId ? { ...n, x: n.x + dx, y: n.y + dy } : n
+    ));
+    // Push the other sites out of the dragged site's way (it stays under the cursor).
+    const r = resolveCollisions(movedSites, movedGroups, movedNodes, movedArp, { site: siteId });
+
+    // Persist the dragged site's node positions only — the box position is derived
+    // from its content, so this preserves placement without pinning the box size.
+    persist.saveNodePositions(r.nodes.filter((n) => n.siteId === siteId));
+    setSites(r.sites);
+    setDeviceGroups(r.groups);
+    setArpDeviceNodes(r.arpNodes);
+    setNodes(r.nodes);
+    relinkNodes(r.nodes);
   }, [relinkNodes]);
 
   const moveDevice = useCallback((hostname: string, dx: number, dy: number) => {
@@ -802,39 +852,49 @@ export function useForceLayout(
     const nextGroups = fitDeviceGroupsToNodes(deviceGroupsRef.current, nextNodes);
     const fittedSites = fitSitesToDeviceGroups(sitesRef.current, nextGroups);
     const arp = relayoutArpNodes(fittedSites, nextGroups, arpDeviceNodesRef.current);
+    // Push sibling devices/discovered (and any collided sites) out of the dragged
+    // device's way; the dragged node stays under the cursor.
+    const r = resolveCollisions(arp.sites, nextGroups, nextNodes, arp.arpNodes, { node: hostname });
 
-    persist.saveNodePositions(nextNodes.filter((n) => n.hostname === hostname));
-    persist.saveSitePositions(arp.sites);
-    setNodes(nextNodes);
-    setDeviceGroups(nextGroups);
-    setSites(arp.sites);
-    setArpDeviceNodes(arp.arpNodes);
-    relinkNodes(nextNodes);
+    persist.saveNodePositions(r.nodes.filter((n) => n.hostname === hostname));
+    setNodes(r.nodes);
+    setDeviceGroups(r.groups);
+    setSites(r.sites);
+    setArpDeviceNodes(r.arpNodes);
+    relinkNodes(r.nodes);
   }, [relinkNodes]);
 
   const resizeSite = useCallback((siteId: string, width: number, height: number) => {
     const site = sitesRef.current.find((candidate) => candidate.id === siteId);
     if (!site) return;
 
-    const minSize = getSiteContentMinSize(siteId, deviceGroupsRef.current, site);
-    const result = reflowSiteContents(
-      site,
-      Math.max(width, minSize.width),
-      Math.max(height, minSize.height),
-      nodesRef.current,
-      deviceGroupsRef.current,
-    );
+    // Shrink-to-fit, no reflow: the box wraps its existing managed device grid
+    // tightly (removing the A4 whitespace). Devices never move and their gaps never
+    // change. The dragged size is clamped UP to the content's tight bounds, so the
+    // box can only ever remove empty space — never clip a device or push one outside.
+    const siteGroups = deviceGroupsRef.current.filter((g) => g.siteId === siteId);
+    const tight = tightSiteSize(site, siteGroups);
+    const managedSite: SiteCluster = {
+      ...site,
+      width: Math.max(width, tight.width),
+      height: Math.max(height, tight.height),
+    };
 
-    const resizedSites = sitesRef.current.map((candidate) => candidate.id === siteId ? result.site : candidate);
-    const arp = relayoutArpNodes(resizedSites, result.groups, arpDeviceNodesRef.current);
+    const resizedSites = sitesRef.current.map((candidate) => candidate.id === siteId ? managedSite : candidate);
+    // Re-add the discovered section below the (unchanged) managed content; the box
+    // grows again elastically to enclose it while discovered devices are shown.
+    const arp = relayoutArpNodes(resizedSites, deviceGroupsRef.current, arpDeviceNodesRef.current);
+    // Push neighbours out of the way of the resized box (it stays anchored).
+    const r = resolveCollisions(arp.sites, deviceGroupsRef.current, nodesRef.current, arp.arpNodes, { site: siteId });
 
-    persist.saveSitePositions(arp.sites.filter((s) => s.id === siteId));
-    persist.saveNodePositions(result.nodes.filter((n) => n.siteId === siteId));
-    setSites(arp.sites);
-    setDeviceGroups(result.groups);
-    setNodes(result.nodes);
-    setArpDeviceNodes(arp.arpNodes);
-    relinkNodes(result.nodes);
+    // Persist the managed (pre-discovered) size so it sticks across refreshes and
+    // discovered toggles; the elastic layout re-adds the discovered section on top.
+    persist.saveSitePositions([managedSite]);
+    setSites(r.sites);
+    setDeviceGroups(r.groups);
+    setNodes(r.nodes);
+    setArpDeviceNodes(r.arpNodes);
+    relinkNodes(r.nodes);
   }, [relinkNodes]);
 
   return {
