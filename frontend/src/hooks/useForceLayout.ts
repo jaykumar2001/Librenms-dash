@@ -488,103 +488,20 @@ function fitSitesToDeviceGroups(sites: SiteCluster[], nextGroups: DeviceGroup[])
   });
 }
 
-function reflowSiteContents(
-  site: SiteCluster,
-  nextWidth: number,
-  nextHeight: number,
-  currentNodes: LayoutNode[],
-  currentGroups: DeviceGroup[],
-): { site: SiteCluster; nodes: LayoutNode[]; groups: DeviceGroup[] } {
-  const siteGroups = currentGroups
-    .filter((group) => group.siteId === site.id)
-    .sort((a, b) => {
-      const countA = currentNodes.filter((node) => node.siteId === a.siteId && node.os === a.os).length;
-      const countB = currentNodes.filter((node) => node.siteId === b.siteId && node.os === b.os).length;
-      return countB - countA;
-    });
+// Smallest box (anchored at the site's top-left) that tightly encloses the site's
+// managed device groups plus padding — i.e. the A4 whitespace removed. Used by
+// manual resize: the box may shrink down to this, never below it, so devices keep
+// their positions and gaps and can never end up outside the box.
+function tightSiteSize(site: SiteCluster, siteGroups: DeviceGroup[]): { width: number; height: number } {
+  const floorW = NODE_W + GROUP_PAD * 2 + SITE_PAD * 2;
+  const floorH = SITE_LABEL_H + SITE_PAD * 2;
+  if (siteGroups.length === 0) return { width: floorW, height: floorH };
 
-  if (siteGroups.length === 0) {
-    return {
-      site: { ...site, width: Math.max(nextWidth, 160), height: Math.max(nextHeight, SITE_LABEL_H + SITE_PAD * 2) },
-      nodes: currentNodes,
-      groups: currentGroups,
-    };
-  }
-
-  const maxContentW = Math.max(nextWidth - SITE_PAD * 2, NODE_W + GROUP_PAD * 2);
-  const updatedNodes = [...currentNodes];
-  const updatedGroupMap = new Map<string, DeviceGroup>();
-
-  let curX = site.x + SITE_PAD;
-  let curY = site.y + SITE_LABEL_H + SITE_PAD;
-  let rowH = 0;
-  let maxRight = site.x + SITE_PAD;
-  let maxBottom = site.y + SITE_LABEL_H + SITE_PAD;
-
-  for (const group of siteGroups) {
-    const groupNodes = updatedNodes
-      .filter((node) => node.siteId === site.id && node.os === group.os)
-      .sort((a, b) => a.hostname.localeCompare(b.hostname));
-
-    if (groupNodes.length === 0) continue;
-
-    const maxCols = Math.max(1, Math.floor((maxContentW - GROUP_PAD * 2 + NODE_GAP_X) / (NODE_W + NODE_GAP_X)));
-    const lCols = groupCols(groupNodes.length);
-    const lRows = Math.ceil(groupNodes.length / lCols);
-    const cols = site.orientation === "portrait"
-      ? Math.min(lRows, maxCols)
-      : Math.min(groupNodes.length, maxCols);
-    const rows = Math.ceil(groupNodes.length / cols);
-    const baseW = GROUP_PAD * 2 + cols * NODE_W;
-    const availableGapX = maxContentW - baseW;
-    const gapX = cols > 1 ? Math.max(NODE_GAP_X, availableGapX / (cols - 1)) : 0;
-    const groupW = Math.min(maxContentW, GROUP_PAD * 2 + cols * NODE_W + Math.max(0, cols - 1) * gapX);
-    const groupH = GROUP_LABEL_H + GROUP_PAD * 2 + rows * NODE_H + Math.max(0, rows - 1) * NODE_GAP_Y;
-
-    if (curX + groupW > site.x + nextWidth - SITE_PAD && curX > site.x + SITE_PAD) {
-      curX = site.x + SITE_PAD;
-      curY += rowH + GROUP_GAP;
-      rowH = 0;
-    }
-
-    updatedGroupMap.set(`${group.siteId}:${group.os}`, {
-      ...group,
-      x: curX,
-      y: curY,
-      width: groupW,
-      height: groupH,
-    });
-
-    groupNodes.forEach((node, index) => {
-      const nodeIndex = updatedNodes.findIndex((candidate) => candidate.hostname === node.hostname);
-      if (nodeIndex < 0) return;
-      const col = index % cols;
-      const row = Math.floor(index / cols);
-      updatedNodes[nodeIndex] = {
-        ...updatedNodes[nodeIndex],
-        x: curX + GROUP_PAD + NODE_W / 2 + col * (NODE_W + gapX),
-        y: curY + GROUP_LABEL_H + GROUP_PAD + NODE_H / 2 + row * (NODE_H + NODE_GAP_Y),
-      };
-    });
-
-    maxRight = Math.max(maxRight, curX + groupW);
-    maxBottom = Math.max(maxBottom, curY + groupH);
-    curX += groupW + GROUP_GAP;
-    rowH = Math.max(rowH, groupH);
-  }
-
-  const updatedGroups = currentGroups.map((group) => updatedGroupMap.get(`${group.siteId}:${group.os}`) ?? group);
-  const minWidth = maxRight - site.x + SITE_PAD;
-  const minHeight = maxBottom - site.y + SITE_PAD;
-
+  const maxRight = Math.max(...siteGroups.map((g) => g.x + g.width));
+  const maxBottom = Math.max(...siteGroups.map((g) => g.y + g.height));
   return {
-    site: {
-      ...site,
-      width: Math.max(nextWidth, minWidth, 160),
-      height: Math.max(nextHeight, minHeight, SITE_LABEL_H + SITE_PAD * 2),
-    },
-    nodes: updatedNodes,
-    groups: updatedGroups,
+    width: Math.max(maxRight + SITE_PAD - site.x, floorW),
+    height: Math.max(maxBottom + SITE_PAD - site.y, floorH),
   };
 }
 
@@ -951,31 +868,28 @@ export function useForceLayout(
     const site = sitesRef.current.find((candidate) => candidate.id === siteId);
     if (!site) return;
 
-    // Free resize: the box becomes the dragged size (floored so content isn't
-    // clipped), with width/height independent — no A4 lock. Content reflows to fit.
-    const floorW = NODE_W + GROUP_PAD * 2 + SITE_PAD * 2;
-    const floorH = SITE_LABEL_H + SITE_PAD * 2;
-    const result = reflowSiteContents(
-      site,
-      Math.max(width, floorW),
-      Math.max(height, floorH),
-      nodesRef.current,
-      deviceGroupsRef.current,
-    );
-    // reflowSiteContents returns max(dragged, content-fit), so the box never clips
-    // its devices. This managed size is what gets persisted (without any discovered
-    // section, which is re-added elastically below).
-    const managedSite = result.site;
+    // Shrink-to-fit, no reflow: the box wraps its existing managed device grid
+    // tightly (removing the A4 whitespace). Devices never move and their gaps never
+    // change. The dragged size is clamped UP to the content's tight bounds, so the
+    // box can only ever remove empty space — never clip a device or push one outside.
+    const siteGroups = deviceGroupsRef.current.filter((g) => g.siteId === siteId);
+    const tight = tightSiteSize(site, siteGroups);
+    const managedSite: SiteCluster = {
+      ...site,
+      width: Math.max(width, tight.width),
+      height: Math.max(height, tight.height),
+    };
 
     const resizedSites = sitesRef.current.map((candidate) => candidate.id === siteId ? managedSite : candidate);
-    const arp = relayoutArpNodes(resizedSites, result.groups, arpDeviceNodesRef.current);
+    // Re-add the discovered section below the (unchanged) managed content; the box
+    // grows again elastically to enclose it while discovered devices are shown.
+    const arp = relayoutArpNodes(resizedSites, deviceGroupsRef.current, arpDeviceNodesRef.current);
     // Push neighbours out of the way of the resized box (it stays anchored).
-    const r = resolveCollisions(arp.sites, result.groups, result.nodes, arp.arpNodes, { site: siteId });
+    const r = resolveCollisions(arp.sites, deviceGroupsRef.current, nodesRef.current, arp.arpNodes, { site: siteId });
 
     // Persist the managed (pre-discovered) size so it sticks across refreshes and
     // discovered toggles; the elastic layout re-adds the discovered section on top.
     persist.saveSitePositions([managedSite]);
-    persist.saveNodePositions(r.nodes.filter((n) => n.siteId === siteId));
     setSites(r.sites);
     setDeviceGroups(r.groups);
     setNodes(r.nodes);
