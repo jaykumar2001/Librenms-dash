@@ -874,7 +874,7 @@ export function TopologyMap({ data, sse }: Props) {
               }`}
             >
               <span className="flex flex-col items-start leading-tight">
-                <span>{o.label.replace(/\s*\(.*\)\s*$/, "")} ({o.links.length}){o.hub ? " ⭐" : ""}</span>
+                <span>{o.label.replace(/\s*\(.*\)\s*$/, "")} ({o.links.length})</span>
                 <span
                   className="text-[10px] font-mono font-bold"
                   style={{ color: visible ? color : undefined, opacity: visible ? 1 : 0.5 }}
