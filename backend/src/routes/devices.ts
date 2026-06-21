@@ -11,6 +11,12 @@ function formatMac(raw: string): string {
   return hex.match(/.{2}/g)!.join(":");
 }
 
+function deriveDisplayName(device: LnmsDevice): string {
+  if (device.display) return device.display;
+  const name = device.sysName || device.hostname;
+  return name.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "").replace(/\.[a-z]+\.[a-z]+$/, "");
+}
+
 const app = new Hono();
 
 app.get("/:hostname/overview", async (c) => {
@@ -63,12 +69,19 @@ app.get("/:hostname/overview", async (c) => {
     }))
     .filter((iface) => iface.mac && iface.mac !== "00:00:00:00:00:00");
 
+  const deviceIps = findDeviceIps(ips, ports);
+  if (device.ip && !deviceIps.includes(device.ip)) deviceIps.push(device.ip);
+  const arpLanIps = cache.get<Map<string, string>>("arpLanIps");
+  const arpLanIp = arpLanIps?.get(hostname);
+  if (arpLanIp && !deviceIps.includes(arpLanIp)) deviceIps.unshift(arpLanIp);
+
   const overview: DeviceOverview = {
     device: {
       device_id: device.device_id,
       hostname: device.hostname,
+      displayName: deriveDisplayName(device),
       ip: device.ip,
-      ips: findDeviceIps(ips, ports),
+      ips: deviceIps,
       os: device.os,
       version: device.version,
       icon: device.icon,

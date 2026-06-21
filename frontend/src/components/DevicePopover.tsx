@@ -1,9 +1,47 @@
-import { Component } from "react";
+import { Component, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import type { HealthSensor, Port, Alert, DeviceRoute, DeviceInterface } from "@librenms-dash/shared";
 import { useDeviceDetail } from "@/hooks/useDeviceDetail";
 import { graphUrl } from "@/lib/api";
 import { formatRate } from "@/lib/format";
+
+function copyToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text: string) {
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand("copy");
+  document.body.removeChild(ta);
+}
+
+function Copyable({ text, className, block, children }: { text: string; className?: string; block?: boolean; children?: ReactNode }) {
+  const [copied, setCopied] = useState(false);
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    copyToClipboard(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  }, [text]);
+  return (
+    <span
+      className={`cursor-pointer ${block ? "block truncate" : ""}  ${copied ? "text-green-400" : `hover:text-white ${className ?? ""}`}`}
+      title={text}
+      onClick={handleClick}
+    >
+      {children ?? text}
+    </span>
+  );
+}
 
 interface Props {
   hostname: string;
@@ -96,36 +134,55 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${data.device.status === 1 ? "bg-green-500" : "bg-red-500"}`} />
-                <span className="font-bold text-base truncate">{data.device.sysName || data.device.hostname}</span>
+                <span className="font-bold text-base truncate">{data.device.displayName}</span>
               </div>
               <span className="text-xs text-gray-400">{data.device.os} {data.device.hardware ? `— ${data.device.hardware}` : ""}</span>
             </div>
           </div>
 
-          <table className="w-full mb-3 text-xs border-collapse rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+          <table className="w-full mb-3 text-xs border-collapse rounded overflow-hidden table-fixed" style={{ background: "rgba(255,255,255,0.05)" }}>
+            <colgroup>
+              <col style={{ width: "76px" }} />
+              <col />
+            </colgroup>
             <tbody>
               {(() => {
                 const deviceIps = data.device.ips?.length ? data.device.ips : [data.device.ip];
                 const overlayLabels: Record<string, string> = { zerotier: "ZeroTier", wireguard: "WireGuard", tailscale: "Tailscale" };
                 const overlayIps = data.device.overlayIps ?? [];
-                const rows: [string, string, boolean?][] = [
-                  ...deviceIps.map((ip: string, i: number) => [i === 0 ? "IP" : "", ip, true] as [string, string, boolean]),
-                  ...overlayIps.map((o: { type: string; ip: string }, i: number) => [i === 0 ? "Overlay" : "", `${overlayLabels[o.type] ?? o.type}: ${o.ip}`, true] as [string, string, boolean]),
-                  ["Operating System", data.device.sysDescr || `${data.device.os} ${data.device.version}` || "—"],
+                const ipRows: [string, string, string][] = [
+                  ...deviceIps.map((ip: string, i: number) => [i === 0 ? "IP" : "", ip, ip] as [string, string, string]),
+                  ...overlayIps.map((o: { type: string; ip: string }, i: number) => [i === 0 ? "Overlay" : "", `${overlayLabels[o.type] ?? o.type}: ${o.ip}`, o.ip] as [string, string, string]),
+                ];
+                const textRows: [string, string, boolean?][] = [
+                  ["OS", data.device.sysDescr || `${data.device.os} ${data.device.version}` || "—"],
                   ["Hardware", data.device.hardware || "—"],
-                  ["Serial", data.device.serial || "—"],
+                  ["Serial", data.device.serial || "—", true],
                   ["Contact", data.device.sysContact || "—"],
                   ["Uptime", formatUptime(data.device.uptime)],
-                  ["Last Discovered", formatTimestamp(data.device.last_discovered)],
+                  ["Last Disc", formatTimestamp(data.device.last_discovered)],
                   ["Last Polled", formatTimestamp(data.device.last_polled)],
                   ["Location", data.device.location],
                 ];
-                return rows.map(([label, value, mono], i) => (
-                  <tr key={`${label}-${i}`} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
-                    <td className="py-1 px-2 text-gray-400 whitespace-nowrap align-top" style={{ width: "120px" }}>{label}</td>
-                    <td className={`py-1 px-2 break-words ${mono || label === "Serial" ? "font-mono" : ""}`}>{value}</td>
-                  </tr>
-                ));
+                let rowIdx = 0;
+                return (
+                  <>
+                    {ipRows.map(([label, display, copyVal], i) => (
+                      <tr key={`ip-${i}`} style={{ background: rowIdx++ % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
+                        <td className="py-1 px-2 text-gray-400 whitespace-nowrap align-top">{label}</td>
+                        <td className="py-1 px-2 font-mono">
+                          <Copyable text={copyVal} block>{display}</Copyable>
+                        </td>
+                      </tr>
+                    ))}
+                    {textRows.map(([label, value, mono], i) => (
+                      <tr key={`txt-${i}`} style={{ background: rowIdx++ % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
+                        <td className="py-1 px-2 text-gray-400 whitespace-nowrap align-top">{label}</td>
+                        <td className={`py-1 px-2 truncate ${mono ? "font-mono" : ""}`}>{value}</td>
+                      </tr>
+                    ))}
+                  </>
+                );
               })()}
             </tbody>
           </table>
@@ -167,7 +224,12 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
           {data.topPorts.length > 0 && (
             <div>
               <div className="text-xs text-gray-400 mb-1 font-semibold">Top Ports</div>
-              <table className="w-full text-xs border-collapse rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+              <table className="w-full text-xs border-collapse rounded overflow-hidden table-fixed" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <colgroup>
+                  <col className="w-[50%]" />
+                  <col className="w-[25%]" />
+                  <col className="w-[25%]" />
+                </colgroup>
                 <thead>
                   <tr style={{ background: "rgba(255,255,255,0.06)" }}>
                     <th className="py-1 px-2 text-left text-gray-400 font-semibold">Port</th>
@@ -178,7 +240,7 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
                 <tbody>
                   {data.topPorts.map((p: Port, i: number) => (
                     <tr key={p.port_id} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
-                      <td className="py-1 px-2 truncate text-gray-300 max-w-[200px]">{p.ifName}{p.ifAlias && p.ifAlias !== p.ifName ? ` (${p.ifAlias})` : ""}</td>
+                      <td className="py-1 px-2 truncate text-gray-300">{p.ifName}{p.ifAlias && p.ifAlias !== p.ifName ? ` (${p.ifAlias})` : ""}</td>
                       <td className="py-1 px-2 text-right font-mono whitespace-nowrap text-green-400">↓{formatRate(p.ifInOctets_rate)}</td>
                       <td className="py-1 px-2 text-right font-mono whitespace-nowrap text-blue-400">↑{formatRate(p.ifOutOctets_rate)}</td>
                     </tr>
@@ -191,7 +253,12 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
           {data.routes.length > 0 && (
             <div className="mt-3">
               <div className="text-xs text-gray-400 mb-1 font-semibold">Routes</div>
-              <table className="w-full text-xs border-collapse rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+              <table className="w-full text-xs border-collapse rounded overflow-hidden table-fixed" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <colgroup>
+                  <col className="w-[40%]" />
+                  <col className="w-[40%]" />
+                  <col className="w-[20%]" />
+                </colgroup>
                 <thead>
                   <tr style={{ background: "rgba(255,255,255,0.06)" }}>
                     <th className="py-1 px-1.5 text-left text-gray-400 font-semibold">Dst/Mask</th>
@@ -202,14 +269,16 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
                 <tbody>
                   {data.routes.map((r: DeviceRoute, i: number) => (
                     <tr key={`${r.dest}-${r.prefix}-${r.nextHop}`} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
-                      <td className="py-0.5 px-1.5 font-mono text-gray-300 whitespace-nowrap">{r.dest}/{r.prefix}</td>
+                      <td className="py-0.5 px-1.5 font-mono text-gray-300">
+                        <Copyable text={`${r.dest}/${r.prefix}`} block>{r.dest}/{r.prefix}</Copyable>
+                      </td>
                       <td className="py-0.5 px-1.5 font-mono">
-                        <span className="text-gray-300">{r.nextHop}</span>
+                        <Copyable text={r.nextHop} className="text-gray-300" block>{r.nextHop}</Copyable>
                         {r.nextHopDevice && (
-                          <div className="text-[10px] text-cyan-400 leading-tight">{r.nextHopDevice}</div>
+                          <div className="text-[10px] text-cyan-400 leading-tight truncate">{r.nextHopDevice}</div>
                         )}
                       </td>
-                      <td className="py-0.5 px-1.5 text-gray-400 truncate max-w-[90px]">{r.iface}</td>
+                      <td className="py-0.5 px-1.5 text-gray-400 truncate">{r.iface}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -229,7 +298,12 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
           {data.interfaces.length > 0 && (
             <div className="mt-3">
               <div className="text-xs text-gray-400 mb-1 font-semibold">Interfaces</div>
-              <table className="w-full text-xs border-collapse rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+              <table className="w-full text-xs border-collapse rounded overflow-hidden table-fixed" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <colgroup>
+                  <col className="w-[25%]" />
+                  <col className="w-[40%]" />
+                  <col className="w-[35%]" />
+                </colgroup>
                 <thead>
                   <tr style={{ background: "rgba(255,255,255,0.06)" }}>
                     <th className="py-1 px-2 text-left text-gray-400 font-semibold">Name</th>
@@ -240,12 +314,23 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
                 <tbody>
                   {data.interfaces.map((iface: DeviceInterface, i: number) => (
                     <tr key={iface.ifName} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
-                      <td className="py-0.5 px-2 text-gray-300 whitespace-nowrap">
+                      <td className="py-0.5 px-2 text-gray-300 truncate">
                         <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${iface.ifOperStatus === "up" ? "bg-green-500" : "bg-red-500"}`} />
                         {iface.ifName}
                       </td>
-                      <td className="py-0.5 px-2 font-mono text-gray-400">{iface.mac}</td>
-                      <td className="py-0.5 px-2 font-mono text-gray-300">{iface.ips.join(", ") || "—"}</td>
+                      <td className="py-0.5 px-2 font-mono text-gray-400">
+                        <Copyable text={iface.mac} block>{iface.mac}</Copyable>
+                      </td>
+                      <td className="py-0.5 px-2 font-mono text-gray-300 truncate">
+                        {iface.ips.length > 0
+                          ? iface.ips.map((ip, j) => (
+                              <span key={ip}>
+                                {j > 0 && ", "}
+                                <Copyable text={ip}>{ip}</Copyable>
+                              </span>
+                            ))
+                          : "—"}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

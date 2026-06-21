@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { cache } from "../cache/store.js";
 import type { TopologyResponse, Site, DeviceSummary, SubnetGroup, NeighborLink, ArpLink, ArpDiscoveredDevice, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsLocation, LnmsAlert, LnmsDeviceIp, LnmsLink } from "../librenms/types.js";
-import { getOverlayPortSummaries, findLanIp, findDeviceIps, isExcludedIface } from "../librenms/overlays.js";
+import { getOverlayPortSummaries, findLanIp, findDeviceIps, isExcludedIface, engine } from "../librenms/overlays.js";
 import { normalizeMac } from "../librenms/oui.js";
 
 const commitSha: string | undefined = process.env.COMMIT_SHA || undefined;
@@ -10,7 +10,7 @@ const commitSha: string | undefined = process.env.COMMIT_SHA || undefined;
 const app = new Hono();
 
 function deriveDisplayName(device: LnmsDevice): string {
-  // Prefer sysName, strip FQDN domain parts
+  if (device.display) return device.display;
   const name = device.sysName || device.hostname;
   return name.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "").replace(/\.[a-z]+\.[a-z]+$/, "");
 }
@@ -26,6 +26,8 @@ app.get("/", (c) => {
   for (const loc of locations) {
     locationMap.set(loc.location, loc);
   }
+
+  const arpLanIps = cache.get<Map<string, string>>("arpLanIps") ?? new Map<string, string>();
 
   const siteMap = new Map<string, Site>();
 
@@ -55,13 +57,20 @@ app.get("/", (c) => {
       if (mac && mac.length === 12 && mac !== "000000000000") macSet.add(mac);
     }
 
+    let lanIp = findLanIp(device.ip, ips, ports);
+    const deviceIps = findDeviceIps(ips, ports);
+    if (device.ip && !deviceIps.includes(device.ip)) deviceIps.push(device.ip);
+    const arpLanIp = arpLanIps.get(device.hostname);
+    if (arpLanIp && engine.isOverlayIp(lanIp)) lanIp = arpLanIp;
+    if (arpLanIp && !deviceIps.includes(arpLanIp)) deviceIps.unshift(arpLanIp);
+
     const summary: DeviceSummary = {
       device_id: device.device_id,
       hostname: device.hostname,
       displayName: deriveDisplayName(device),
       ip: device.ip,
-      lanIp: findLanIp(device.ip, ips, ports),
-      ips: findDeviceIps(ips, ports),
+      lanIp,
+      ips: deviceIps,
       macs: [...macSet],
       os: device.os,
       icon: device.icon,

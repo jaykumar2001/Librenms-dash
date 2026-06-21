@@ -1,6 +1,7 @@
 export interface Device {
   device_id: number;
   hostname: string;
+  displayName: string;
   ip: string;
   ips: string[];
   os: string;

@@ -10,6 +10,7 @@ export interface LnmsDevice {
   location: string;
   uptime: number;
   sysName: string;
+  display: string | null;
   hardware: string;
   features: string;
   serial: string;
