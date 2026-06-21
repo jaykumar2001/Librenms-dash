@@ -1,6 +1,7 @@
 export interface Device {
   device_id: number;
   hostname: string;
+  displayName: string;
   ip: string;
   ips: string[];
   os: string;
@@ -171,12 +172,20 @@ export interface TopologyResponse {
   commitSha?: string;
 }
 
+export interface DeviceInterface {
+  ifName: string;
+  mac: string;
+  ifOperStatus: string;
+  ips: string[];
+}
+
 export interface DeviceOverview {
   device: Device;
   health: HealthSensor[];
   topPorts: Port[];
   alerts: Alert[];
   routes: DeviceRoute[];
+  interfaces: DeviceInterface[];
 }
 
 export interface AssetEvent {

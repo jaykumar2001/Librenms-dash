@@ -150,18 +150,18 @@ export async function pollPortsAndIps() {
 
   for (const device of devices) {
     if (device.status !== 1) continue; // skip down devices
-    try {
-      const [ports, ips] = await Promise.all([
-        fetchDevicePorts(device.hostname),
-        fetchDeviceIps(device.hostname),
-      ]);
-      allPorts.set(device.hostname, ports);
-      allIps.set(device.hostname, ips);
-      cache.set(`ports:${device.hostname}`, ports, TTL.PORTS);
-      cache.set(`ips:${device.hostname}`, ips, TTL.DEVICE_IPS);
-    } catch (e) {
-      console.warn(`[poller] Failed to fetch ports/ips for ${device.hostname}:`, e);
-    }
+    const [portsResult, ipsResult] = await Promise.allSettled([
+      fetchDevicePorts(device.hostname),
+      fetchDeviceIps(device.hostname),
+    ]);
+    const ports = portsResult.status === "fulfilled" ? portsResult.value : [];
+    const ips = ipsResult.status === "fulfilled" ? ipsResult.value : [];
+    if (portsResult.status === "rejected") console.warn(`[poller] Failed to fetch ports for ${device.hostname}:`, portsResult.reason);
+    if (ipsResult.status === "rejected") console.warn(`[poller] Failed to fetch ips for ${device.hostname}:`, ipsResult.reason);
+    allPorts.set(device.hostname, ports);
+    allIps.set(device.hostname, ips);
+    cache.set(`ports:${device.hostname}`, ports, TTL.PORTS);
+    cache.set(`ips:${device.hostname}`, ips, TTL.DEVICE_IPS);
     await delay(STAGGER_MS);
   }
 
@@ -234,6 +234,21 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
       if (name) portIdToIfName.set(p.port_id, name);
       const mac = normalizeMac(p.ifPhysAddress ?? "");
       if (mac && mac.length === 12 && mac !== "000000000000") portIdToMac.set(p.port_id, mac);
+    }
+  }
+
+  // MAC → hostname for managed devices (from interface MACs), used for
+  // MAC-based ARP link matching when IP-based matching misses (e.g. device
+  // whose IP endpoint 404s but whose interface MACs appear in other ARP tables).
+  const macToHostname = new Map<string, string>();
+  for (const d of devices) {
+    const ports = cache.get<LnmsPort[]>(`ports:${d.hostname}`);
+    if (!ports) continue;
+    for (const p of ports) {
+      const mac = normalizeMac(p.ifPhysAddress ?? "");
+      if (mac && mac.length === 12 && mac !== "000000000000") {
+        macToHostname.set(mac, d.hostname);
+      }
     }
   }
 
@@ -346,6 +361,41 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
     // fall through with whatever we collected per-IP
   }
 
+  // Second pass: create ARP links via MAC matching for managed devices that
+  // the IP-based pass missed (e.g. device whose /ip endpoint 404s but whose
+  // interface MACs appear in other devices' ARP tables).
+  for (const entry of allArpEntries) {
+    const seeingHostname = deviceIdToHostname.get(entry.device_id);
+    if (!seeingHostname) continue;
+    if (!activeDeviceIds.has(entry.device_id)) continue;
+
+    const mac = normalizeMac(entry.mac_address);
+    const macOwner = macToHostname.get(mac);
+    if (!macOwner || macOwner === seeingHostname) continue;
+    if (hostnameToLocation.get(seeingHostname) !== hostnameToLocation.get(macOwner)) continue;
+
+    const ifName = portIdToIfName.get(entry.port_id) ?? "";
+    if (ifName && isExcludedIface(ifName)) continue;
+
+    const key = [macOwner, seeingHostname].sort().join("<>");
+    if (linkSet.has(key)) continue;
+    linkSet.add(key);
+
+    const toMac = portIdToMac.get(entry.port_id);
+
+    arpLinks.push({
+      fromHostname: macOwner,
+      toHostname: seeingHostname,
+      fromIp: entry.ipv4_address,
+      toIp: hostnameToLocalIp.get(seeingHostname) ?? "",
+      mac: entry.mac_address,
+      fromInterface: undefined,
+      fromMac: mac,
+      toInterface: ifName || undefined,
+      toMac,
+    });
+  }
+
   // Build managed MAC set from ARP entries matching managed IPs (per-location).
   // MACs are globally unique, but the IP→MAC association must be checked against
   // the correct location to avoid false matches from overlapping subnets.
@@ -394,9 +444,26 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   // --- Consolidation: union-find to merge MACs sharing an IP and IPs sharing a MAC ---
   const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, portIdToMac, portIdToIp, activeDeviceIds);
 
+  // Discover LAN IPs for managed devices from ARP entries where a device's
+  // interface MAC is seen at a non-overlay, non-docker IP. This catches devices
+  // polled only via overlay whose /ip endpoint fails.
+  const arpLanIps = new Map<string, string>();
+  for (const entry of allArpEntries) {
+    const mac = normalizeMac(entry.mac_address);
+    const owner = macToHostname.get(mac);
+    if (!owner) continue;
+    if (arpLanIps.has(owner)) continue;
+    const ip = entry.ipv4_address;
+    if (!ip || ip === "0.0.0.0") continue;
+    if (engine.isOverlayIp(ip) || isDockerIp(ip)) continue;
+    if (isExcludedArpIp(ip)) continue;
+    arpLanIps.set(owner, ip);
+  }
+  cache.set("arpLanIps", arpLanIps, TTL.PORTS);
+
   cache.set("arpLinks", arpLinks, TTL.PORTS);
   cache.set("arpDevices", arpDevices, TTL.PORTS);
-  console.log(`[poller] Cached ${arpLinks.length} ARP links, ${arpDevices.length} discovered devices (consolidated) from ${allArpEntries.length} ARP entries`);
+  console.log(`[poller] Cached ${arpLinks.length} ARP links, ${arpDevices.length} discovered devices (consolidated), ${arpLanIps.size} ARP-discovered LAN IPs from ${allArpEntries.length} ARP entries`);
 
   const currArpDevices = new Set(arpDevices.map(d => {
     const mac = d.mac.replace(/(.{2})(?=.)/g, "$1:");

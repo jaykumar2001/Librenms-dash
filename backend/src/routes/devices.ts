@@ -2,8 +2,20 @@ import { Hono } from "hono";
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet } from "../librenms/client.js";
 import { findDeviceIps, getOverlayPortSummaries, engine } from "../librenms/overlays.js";
-import type { DeviceOverview, DeviceRoute } from "@librenms-dash/shared";
+import type { DeviceOverview, DeviceInterface, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsAlert, LnmsHealthSensor } from "../librenms/types.js";
+
+function formatMac(raw: string): string {
+  const hex = raw.replace(/[^0-9a-fA-F]/g, "").toLowerCase();
+  if (hex.length !== 12) return "";
+  return hex.match(/.{2}/g)!.join(":");
+}
+
+function deriveDisplayName(device: LnmsDevice): string {
+  if (device.display) return device.display;
+  const name = device.sysName || device.hostname;
+  return name.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "").replace(/\.[a-z]+\.[a-z]+$/, "");
+}
 
 const app = new Hono();
 
@@ -39,12 +51,37 @@ app.get("/:hostname/overview", async (c) => {
 
   const ips = cache.get<LnmsDeviceIp[]>(`ips:${hostname}`) ?? [];
 
+  const ipsByPort = new Map<number, string[]>();
+  for (const ip of ips) {
+    if (!ip.ipv4_address) continue;
+    const arr = ipsByPort.get(ip.port_id);
+    if (arr) arr.push(ip.ipv4_address);
+    else ipsByPort.set(ip.port_id, [ip.ipv4_address]);
+  }
+
+  const interfaces: DeviceInterface[] = ports
+    .filter((p) => p.ifName !== "lo" && p.ifDescr !== "lo" && p.ifPhysAddress)
+    .map((p) => ({
+      ifName: p.ifName || p.ifDescr,
+      mac: formatMac(p.ifPhysAddress ?? ""),
+      ifOperStatus: p.ifOperStatus,
+      ips: ipsByPort.get(p.port_id) ?? [],
+    }))
+    .filter((iface) => iface.mac && iface.mac !== "00:00:00:00:00:00");
+
+  const deviceIps = findDeviceIps(ips, ports);
+  if (device.ip && !deviceIps.includes(device.ip)) deviceIps.push(device.ip);
+  const arpLanIps = cache.get<Map<string, string>>("arpLanIps");
+  const arpLanIp = arpLanIps?.get(hostname);
+  if (arpLanIp && !deviceIps.includes(arpLanIp)) deviceIps.unshift(arpLanIp);
+
   const overview: DeviceOverview = {
     device: {
       device_id: device.device_id,
       hostname: device.hostname,
+      displayName: deriveDisplayName(device),
       ip: device.ip,
-      ips: findDeviceIps(ips, ports),
+      ips: deviceIps,
       os: device.os,
       version: device.version,
       icon: device.icon,
@@ -121,6 +158,7 @@ app.get("/:hostname/overview", async (c) => {
       state: a.state,
       timestamp: a.timestamp,
     })),
+    interfaces,
   };
 
   return c.json(overview);
