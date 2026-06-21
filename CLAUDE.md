@@ -61,6 +61,14 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. Build & Verify
+
+**The Docker build is the source of truth.**
+
+- Always verify changes with `docker-compose up -d --build` — not bare `tsc` or `npm run build`.
+- The containerized build is the real pipeline. Local toolchain checks can miss issues (different Node version, missing deps, layer caching).
+- Do not report work as done until the Docker build succeeds and the container starts.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.

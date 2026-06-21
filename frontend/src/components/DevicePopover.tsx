@@ -1,6 +1,6 @@
 import { Component } from "react";
 import type { ReactNode } from "react";
-import type { HealthSensor, Port, Alert, DeviceRoute } from "@librenms-dash/shared";
+import type { HealthSensor, Port, Alert, DeviceRoute, DeviceInterface } from "@librenms-dash/shared";
 import { useDeviceDetail } from "@/hooks/useDeviceDetail";
 import { graphUrl } from "@/lib/api";
 import { formatRate } from "@/lib/format";
@@ -223,6 +223,33 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
               {data.alerts.map((a: Alert) => (
                 <div key={a.id} className="text-xs text-red-300">{a.rule}</div>
               ))}
+            </div>
+          )}
+
+          {data.interfaces.length > 0 && (
+            <div className="mt-3">
+              <div className="text-xs text-gray-400 mb-1 font-semibold">Interfaces</div>
+              <table className="w-full text-xs border-collapse rounded overflow-hidden" style={{ background: "rgba(255,255,255,0.05)" }}>
+                <thead>
+                  <tr style={{ background: "rgba(255,255,255,0.06)" }}>
+                    <th className="py-1 px-2 text-left text-gray-400 font-semibold">Name</th>
+                    <th className="py-1 px-2 text-left text-gray-400 font-semibold">MAC</th>
+                    <th className="py-1 px-2 text-left text-gray-400 font-semibold">IPs</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.interfaces.map((iface: DeviceInterface, i: number) => (
+                    <tr key={iface.ifName} style={{ background: i % 2 === 0 ? "rgba(255,255,255,0.03)" : "transparent" }}>
+                      <td className="py-0.5 px-2 text-gray-300 whitespace-nowrap">
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full mr-1 ${iface.ifOperStatus === "up" ? "bg-green-500" : "bg-red-500"}`} />
+                        {iface.ifName}
+                      </td>
+                      <td className="py-0.5 px-2 font-mono text-gray-400">{iface.mac}</td>
+                      <td className="py-0.5 px-2 font-mono text-gray-300">{iface.ips.join(", ") || "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </>
