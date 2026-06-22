@@ -17,15 +17,17 @@ function AuthLoadingScreen({ message }: { message: string }) {
 }
 
 function Dashboard() {
-  const { data, isLoading, error } = useTopology();
+  const { data, isLoading, error, warming } = useTopology();
   const sse = useSSE();
 
-  if (isLoading) {
+  if (isLoading || warming) {
     return (
       <div className="h-full w-full flex items-center justify-center bg-gray-950">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-400 text-sm">Loading topology from LibreNMS...</p>
+          <p className="text-gray-400 text-sm">
+            {warming ? "Server is starting up — waiting for cache..." : "Loading topology from LibreNMS..."}
+          </p>
         </div>
       </div>
     );
