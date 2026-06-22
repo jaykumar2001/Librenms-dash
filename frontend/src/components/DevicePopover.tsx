@@ -1,47 +1,10 @@
-import { Component, useState, useCallback } from "react";
+import { Component } from "react";
 import type { ReactNode } from "react";
 import type { HealthSensor, Port, Alert, DeviceRoute, DeviceInterface } from "@librenms-dash/shared";
 import { useDeviceDetail } from "@/hooks/useDeviceDetail";
 import { graphUrl } from "@/lib/api";
 import { formatRate } from "@/lib/format";
-
-function copyToClipboard(text: string) {
-  if (navigator.clipboard?.writeText) {
-    navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
-  } else {
-    fallbackCopy(text);
-  }
-}
-
-function fallbackCopy(text: string) {
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.style.position = "fixed";
-  ta.style.opacity = "0";
-  document.body.appendChild(ta);
-  ta.select();
-  document.execCommand("copy");
-  document.body.removeChild(ta);
-}
-
-function Copyable({ text, className, block, children }: { text: string; className?: string; block?: boolean; children?: ReactNode }) {
-  const [copied, setCopied] = useState(false);
-  const handleClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    copyToClipboard(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1200);
-  }, [text]);
-  return (
-    <span
-      className={`cursor-pointer ${block ? "block truncate" : ""}  ${copied ? "text-green-400" : `hover:text-white ${className ?? ""}`}`}
-      title={text}
-      onClick={handleClick}
-    >
-      {children ?? text}
-    </span>
-  );
-}
+import { Copyable } from "./Copyable";
 
 interface Props {
   hostname: string;
@@ -321,13 +284,12 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
                       <td className="py-0.5 px-2 font-mono text-gray-400">
                         <Copyable text={iface.mac} block>{iface.mac}</Copyable>
                       </td>
-                      <td className="py-0.5 px-2 font-mono text-gray-300 truncate">
+                      <td className="py-0.5 px-2 font-mono text-gray-300">
                         {iface.ips.length > 0
-                          ? iface.ips.map((ip, j) => (
-                              <span key={ip}>
-                                {j > 0 && ", "}
+                          ? iface.ips.map((ip) => (
+                              <div key={ip} className="leading-tight">
                                 <Copyable text={ip}>{ip}</Copyable>
-                              </span>
+                              </div>
                             ))
                           : "—"}
                       </td>
