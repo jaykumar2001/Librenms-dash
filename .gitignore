@@ -9,6 +9,15 @@ dist/
 .grok/
 .vscode/
 .idea/
+.claude.json
+.mcp.json
+
+# Python virtualenv
+bin/
+lib/
+lib64
+pyvenv.cfg
+share/
 
 # Reproducible IEEE OUI databases (fetched by scripts/download-oui.sh or the Docker build)
 /data/*.csv
