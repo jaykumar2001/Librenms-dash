@@ -552,7 +552,7 @@ export function TopologyMap({ data, sse }: Props) {
       const rect = el.getBoundingClientRect();
       if (e.ctrlKey) {
         // Trackpad pinch and Ctrl+wheel both arrive here; deltaY is the pinch amount.
-        zoomAt(Math.exp(-e.deltaY * 0.01), e.clientX - rect.left, e.clientY - rect.top);
+        zoomAt(Math.exp(-e.deltaY * 0.003), e.clientX - rect.left, e.clientY - rect.top);
       } else {
         setTransform((prev) => ({ ...prev, x: prev.x - e.deltaX, y: prev.y - e.deltaY }));
       }

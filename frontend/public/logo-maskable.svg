@@ -1,0 +1,44 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark background fill with rounded corners -->
+  <rect width="512" height="512" rx="115" ry="115" fill="#030712"/>
+
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="238" stroke="#74b743" stroke-width="10" stroke-opacity="0.35"/>
+  <circle cx="256" cy="256" r="238" stroke="#74b743" stroke-width="3.5" stroke-opacity="0.7"/>
+
+  <!-- Network links -->
+  <line x1="256" y1="154" x2="154" y2="290" stroke="#74b743" stroke-width="8.5" stroke-opacity="0.5"/>
+  <line x1="256" y1="154" x2="358" y2="290" stroke="#74b743" stroke-width="8.5" stroke-opacity="0.5"/>
+  <line x1="154" y1="290" x2="358" y2="290" stroke="#74b743" stroke-width="8.5" stroke-opacity="0.5"/>
+  <line x1="154" y1="290" x2="188" y2="384" stroke="#38bdf8" stroke-width="6.5" stroke-opacity="0.4"/>
+  <line x1="358" y1="290" x2="324" y2="384" stroke="#fbbf24" stroke-width="6.5" stroke-opacity="0.4"/>
+  <line x1="256" y1="154" x2="256" y2="86" stroke="#74b743" stroke-width="6.5" stroke-opacity="0.3"/>
+
+  <!-- Central hub node -->
+  <circle cx="256" cy="154" r="42" fill="#74b743" fill-opacity="0.15" stroke="#74b743" stroke-width="8.5"/>
+  <circle cx="256" cy="154" r="17" fill="#74b743"/>
+
+  <!-- Left node -->
+  <circle cx="154" cy="290" r="34" fill="#38bdf8" fill-opacity="0.1" stroke="#38bdf8" stroke-width="6.5"/>
+  <circle cx="154" cy="290" r="15" fill="#38bdf8"/>
+
+  <!-- Right node -->
+  <circle cx="358" cy="290" r="34" fill="#fbbf24" fill-opacity="0.1" stroke="#fbbf24" stroke-width="6.5"/>
+  <circle cx="358" cy="290" r="15" fill="#fbbf24"/>
+
+  <!-- Leaf nodes -->
+  <circle cx="188" cy="384" r="17" fill="#38bdf8" fill-opacity="0.12" stroke="#38bdf8" stroke-width="4"/>
+  <circle cx="188" cy="384" r="8.5" fill="#38bdf8" fill-opacity="0.7"/>
+
+  <circle cx="324" cy="384" r="17" fill="#fbbf24" fill-opacity="0.12" stroke="#fbbf24" stroke-width="4"/>
+  <circle cx="324" cy="384" r="8.5" fill="#fbbf24" fill-opacity="0.7"/>
+
+  <!-- Top pulse -->
+  <circle cx="256" cy="86" r="13" fill="none" stroke="#74b743" stroke-width="4" stroke-opacity="0.5"/>
+  <circle cx="256" cy="86" r="6.5" fill="#74b743" fill-opacity="0.6"/>
+
+  <!-- Dashboard bars -->
+  <rect x="222" y="426" width="17" height="43" rx="4" fill="#74b743" fill-opacity="0.6"/>
+  <rect x="247" y="409" width="17" height="60" rx="4" fill="#74b743" fill-opacity="0.8"/>
+  <rect x="273" y="418" width="17" height="51" rx="4" fill="#74b743" fill-opacity="0.7"/>
+</svg>
