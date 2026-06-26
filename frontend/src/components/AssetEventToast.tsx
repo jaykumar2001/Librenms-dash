@@ -1,5 +1,22 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { AssetEvent } from "@librenms-dash/shared";
+import { Copyable } from "./Copyable";
+
+function CopyableAsset({ category, asset }: { category: string; asset: string }) {
+  if (category === "ip") {
+    const spaceIdx = asset.lastIndexOf(" ");
+    const ip = spaceIdx === -1 ? asset : asset.slice(spaceIdx + 1);
+    const prefix = spaceIdx === -1 ? "" : asset.slice(0, spaceIdx);
+    return <>{prefix && <span className="text-gray-500">{prefix} </span>}<Copyable text={ip}>{ip}</Copyable></>;
+  }
+  if (category === "discovered-device") {
+    const atIdx = asset.indexOf(" at ");
+    if (atIdx !== -1) {
+      return <><Copyable text={asset.slice(0, atIdx)}>{asset.slice(0, atIdx)}</Copyable><span className="text-gray-500">{asset.slice(atIdx)}</span></>;
+    }
+  }
+  return <>{asset}</>;
+}
 
 const TOAST_DURATION_MS = 5_000;
 const TOAST_GAP_MS = 1_500;
@@ -207,7 +224,9 @@ export function AssetEventToast({ allEvents, connected }: AssetEventToastProps) 
                           </span>
                         </td>
                         <td className="py-1 px-2 text-gray-400 whitespace-nowrap capitalize">{e.category}</td>
-                        <td className="py-1 px-2 text-gray-300 truncate max-w-[180px]" title={e.asset}>{e.asset}</td>
+                        <td className="py-1 px-2 text-gray-300 truncate max-w-[180px]" title={e.asset}>
+                          <CopyableAsset category={e.category} asset={e.asset} />
+                        </td>
                       </tr>
                     ))}
                   </tbody>
