@@ -2,9 +2,17 @@ import type { TopologyResponse, DeviceOverview } from "@librenms-dash/shared";
 
 const BASE = "/api";
 
+export class ServerWarmingError extends Error {
+  constructor() {
+    super("Server is starting up");
+    this.name = "ServerWarmingError";
+  }
+}
+
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { credentials: "include" });
   if (res.status === 401) throw new Error("Unauthorized");
+  if (res.status === 503) throw new ServerWarmingError();
   if (!res.ok) throw new Error(`API ${path}: ${res.status}`);
   return res.json();
 }

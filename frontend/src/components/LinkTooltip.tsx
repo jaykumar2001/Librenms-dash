@@ -1,3 +1,5 @@
+import { Copyable } from "./Copyable";
+
 export interface LinkTooltipData {
   type: "lldp" | "arp" | "overlay" | "arp-device";
   screenX: number;
@@ -70,12 +72,12 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
             <SectionLabel label="Seen by" />
             <Row label="Device" value={data.sourceDisplayName} />
             {data.interface && <Row label="Interface" value={data.interface} mono />}
-            {data.sourceIp && <Row label="IP" value={data.sourceIp} mono />}
-            {data.sourceMac && <Row label="MAC" value={data.sourceMac} mono />}
+            {data.sourceIp && <Row label="IP" value={data.sourceIp} mono copyable />}
+            {data.sourceMac && <Row label="MAC" value={data.sourceMac} mono copyable />}
             <SectionLabel label="Discovered device" />
             <Row label="Vendor" value={data.vendor || data.targetDisplayName || "Unknown"} />
-            <Row label="IP" value={data.targetIp ?? "—"} mono />
-            <Row label="MAC" value={data.mac ?? "—"} mono />
+            <Row label="IP" value={data.targetIp ?? "—"} mono copyable />
+            <Row label="MAC" value={data.mac ?? "—"} mono copyable />
           </tbody>
         </table>
       ) : data.type === "arp" ? (
@@ -84,13 +86,13 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
             <SectionLabel label="Device" />
             <Row label="Name" value={data.sourceDisplayName} />
             {data.sourceInterface && <Row label="Interface" value={data.sourceInterface} mono />}
-            {data.sourceIp && <Row label="IP" value={data.sourceIp} mono />}
-            {data.mac && <Row label="MAC" value={data.mac} mono />}
+            {data.sourceIp && <Row label="IP" value={data.sourceIp} mono copyable />}
+            {data.mac && <Row label="MAC" value={data.mac} mono copyable />}
             <SectionLabel label="Seen by" />
             <Row label="Device" value={data.targetDisplayName} />
             {data.targetInterface && <Row label="Interface" value={data.targetInterface} mono />}
-            {data.targetIp && <Row label="IP" value={data.targetIp} mono />}
-            {data.targetMac && <Row label="MAC" value={data.targetMac} mono />}
+            {data.targetIp && <Row label="IP" value={data.targetIp} mono copyable />}
+            {data.targetMac && <Row label="MAC" value={data.targetMac} mono copyable />}
           </tbody>
         </table>
       ) : (
@@ -130,8 +132,8 @@ function DeviceSection({ role, device, iface, ip, ipLabel = "IP", mac }: {
       <SectionLabel label={role} />
       <Row label="Device" value={device} />
       {iface && <Row label="Interface" value={iface} mono />}
-      {ip && <Row label={ipLabel} value={ip} mono />}
-      {mac && <Row label="MAC" value={mac} mono />}
+      {ip && <Row label={ipLabel} value={ip} mono copyable />}
+      {mac && <Row label="MAC" value={mac} mono copyable />}
     </>
   );
 }
@@ -146,11 +148,13 @@ function SectionLabel({ label }: { label: string }) {
   );
 }
 
-function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function Row({ label, value, mono, copyable }: { label: string; value: string; mono?: boolean; copyable?: boolean }) {
   return (
     <tr>
       <td className="py-0.5 pr-2 text-gray-500 whitespace-nowrap align-top">{label}</td>
-      <td className={`py-0.5 text-gray-200 break-all ${mono ? "font-mono" : ""}`}>{value}</td>
+      <td className={`py-0.5 text-gray-200 break-all ${mono ? "font-mono" : ""}`}>
+        {copyable && value && value !== "—" ? <Copyable text={value}>{value}</Copyable> : value}
+      </td>
     </tr>
   );
 }

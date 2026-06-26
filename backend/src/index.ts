@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
+import { streamSSE } from "hono/streaming";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { PORT } from "./config.js";
@@ -23,17 +24,38 @@ app.use("*", cors({
 }));
 
 let cacheReady = false;
+const cacheReadyListeners = new Set<() => void>();
+
+function onCacheReady(fn: () => void) { cacheReadyListeners.add(fn); }
+function offCacheReady(fn: () => void) { cacheReadyListeners.delete(fn); }
 
 app.get("/api/health", (c) => c.json({ status: cacheReady ? "ok" : "warming", uptime: process.uptime() }));
+
+app.get("/api/health/stream", (c) => {
+  return streamSSE(c, async (stream) => {
+    if (cacheReady) {
+      await stream.writeSSE({ data: "ok", event: "ready" });
+      return;
+    }
+    const notify = () => {
+      stream.writeSSE({ data: "ok", event: "ready" }).catch(() => {});
+    };
+    onCacheReady(notify);
+    stream.onAbort(() => offCacheReady(notify));
+    while (!stream.aborted && !cacheReady) {
+      await stream.sleep(5_000);
+    }
+  });
+});
 
 app.route("/api/auth", authRoutes);
 
 app.use("/api/*", async (c, next) => {
-  if (c.req.path.startsWith("/api/auth")) {
+  if (c.req.path.startsWith("/api/auth") || c.req.path.startsWith("/api/health")) {
     await next();
     return;
   }
-  if (!cacheReady && c.req.path !== "/api/health") {
+  if (!cacheReady) {
     return c.json({ error: "Cache warming, try again shortly" }, 503);
   }
   await next();
@@ -61,6 +83,8 @@ async function main() {
   });
   await warmCache();
   cacheReady = true;
+  for (const fn of cacheReadyListeners) fn();
+  cacheReadyListeners.clear();
   startPoller();
   console.log(`[librenms-dash] Cache ready — serving requests`);
 }

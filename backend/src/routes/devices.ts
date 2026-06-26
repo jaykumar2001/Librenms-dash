@@ -14,7 +14,7 @@ function formatMac(raw: string): string {
 function deriveDisplayName(device: LnmsDevice): string {
   if (device.display) return device.display;
   const name = device.sysName || device.hostname;
-  return name.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "").replace(/\.[a-z]+\.[a-z]+$/, "");
+  return name.replace(/\..*$/, "");
 }
 
 const app = new Hono();
@@ -59,8 +59,9 @@ app.get("/:hostname/overview", async (c) => {
     else ipsByPort.set(ip.port_id, [ip.ipv4_address]);
   }
 
+  const dockerVethRe = /^br-[a-f0-9]{12}$|^docker0$|^veth[a-f0-9]+$/;
   const interfaces: DeviceInterface[] = ports
-    .filter((p) => p.ifName !== "lo" && p.ifDescr !== "lo" && p.ifPhysAddress)
+    .filter((p) => p.ifName !== "lo" && p.ifDescr !== "lo" && p.ifPhysAddress && !dockerVethRe.test(p.ifName || p.ifDescr))
     .map((p) => ({
       ifName: p.ifName || p.ifDescr,
       mac: formatMac(p.ifPhysAddress ?? ""),
@@ -128,7 +129,7 @@ app.get("/:hostname/overview", async (c) => {
       const samesite = new Map<string, string>();
       const overlay = new Map<string, string>();
       for (const d of devices) {
-        const name = d.sysName?.replace(/\.local\.lan$/, "").replace(/\.local\.zt$/, "") || d.hostname;
+        const name = deriveDisplayName(d);
         const sameLoc = d.location === device.location;
         const dPorts = cache.get<LnmsPort[]>(`ports:${d.hostname}`) ?? [];
         const overlayPortIds = new Set(dPorts.filter((p) => engine.classifyPort(p)).map((p) => p.port_id));
@@ -143,6 +144,16 @@ app.get("/:hostname/overview", async (c) => {
         }
         if (engine.isOverlayIp(d.ip)) { overlayIps.add(d.ip); overlay.set(d.ip, name); }
         else if (sameLoc) samesite.set(d.ip, name);
+      }
+      const arpLanIpMap = cache.get<Map<string, string>>("arpLanIps");
+      if (arpLanIpMap) {
+        for (const d of devices) {
+          if (d.location !== device.location) continue;
+          const arpIp = arpLanIpMap.get(d.hostname);
+          if (arpIp && !overlay.has(arpIp) && !samesite.has(arpIp)) {
+            samesite.set(arpIp, deriveDisplayName(d));
+          }
+        }
       }
       return routes.map((r) => ({
         ...r,

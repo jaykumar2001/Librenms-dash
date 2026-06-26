@@ -38,6 +38,7 @@ const prevAssets = {
   routes: new Set<string>(),
 };
 const assetBaseline = new Set<string>();
+const prevDeviceStatus = new Map<string, number>();
 let eventSeq = 0;
 const MAX_EVENTS = 200;
 
@@ -137,6 +138,17 @@ export async function pollDevicesAndLocations() {
 
   const currDevices = new Set(devices.map(d => `${d.hostname} (${d.ip})`));
   prevAssets.devices = diffAndLog("device", prevAssets.devices, currDevices);
+
+  for (const d of devices) {
+    const prev = prevDeviceStatus.get(d.hostname);
+    if (prev !== undefined && prev !== d.status) {
+      const label = d.status === 1 ? "up" : "down";
+      console.log(`${localTimestamp()} [status] ${d.hostname} went ${label}`);
+      topologyChangedInCycle = true;
+    }
+    prevDeviceStatus.set(d.hostname, d.status);
+  }
+
   flushTopologyChanged();
 }
 
@@ -686,9 +698,26 @@ export async function pollRoutes() {
   flushTopologyChanged();
 }
 
+let prevAlertIds = new Set<number>();
+
 export async function pollAlerts() {
   const alerts = await fetchAlerts();
   cache.set("alerts", alerts, TTL.ALERTS);
+
+  const currIds = new Set(alerts.map(a => a.id));
+  if (prevAlertIds.size > 0 || currIds.size > 0) {
+    let changed = currIds.size !== prevAlertIds.size;
+    if (!changed) {
+      for (const id of currIds) {
+        if (!prevAlertIds.has(id)) { changed = true; break; }
+      }
+    }
+    if (changed) {
+      topologyChangedInCycle = true;
+      flushTopologyChanged();
+    }
+  }
+  prevAlertIds = currIds;
 }
 
 export async function warmCache() {
