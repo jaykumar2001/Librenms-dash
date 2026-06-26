@@ -13,6 +13,31 @@
 
 **LibreNMS-Dash** is a LibreNMS-backed network dashboard. It aggregates devices, sites, overlays, alerts, and graphs into a single topology view with live hover details and SVG-based layout controls.
 
+## Getting Started
+
+> **Prerequisites:** [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) — no other local dependencies required.
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/jaykumar2001/Librenms-dash.git
+cd Librenms-dash
+
+# 2. Configure your environment
+cp .env.example .env
+#    Edit .env and set:
+#      LIBRENMS_URL   — your LibreNMS instance URL
+#      LIBRENMS_TOKEN — your LibreNMS API token
+#      LIBRENMS_USER / LIBRENMS_PASS — optional, enables route table polling
+#      AUTH_USERNAME / AUTH_PASSWORD — dashboard login credentials
+
+# 3. Build and start
+docker compose up -d --build
+```
+
+The dashboard is now available at **`http://<your-host-ip>:3001`**.
+
+---
+
 ## What It Shows
 
 - Devices grouped by LibreNMS `location`
