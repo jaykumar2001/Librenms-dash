@@ -70,6 +70,7 @@ export interface DeviceSummary {
   ip: string;
   lanIp: string;
   ips: string[];
+  allIps: string[];
   macs: string[];
   os: string;
   icon: string;

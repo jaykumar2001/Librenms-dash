@@ -110,6 +110,16 @@ export interface LnmsRoute {
   context_name: string;
 }
 
+export interface LnmsNdEntry {
+  portName: string;
+  portId: number | null;
+  mac: string;
+  vendor: string;
+  ipv6: string;
+  remoteDevice: string;
+  remoteInterface: string;
+}
+
 export interface LnmsListResponse<T> {
   count: number;
   [key: string]: T[] | number | string;

@@ -53,10 +53,14 @@ app.get("/:hostname/overview", async (c) => {
 
   const ipsByPort = new Map<number, string[]>();
   for (const ip of ips) {
-    if (!ip.ipv4_address) continue;
+    const addrs: string[] = [];
+    if (ip.ipv4_address) addrs.push(ip.ipv4_address);
+    const v6 = ip.ipv6_compressed ?? ip.ipv6_address;
+    if (v6) addrs.push(v6);
+    if (addrs.length === 0) continue;
     const arr = ipsByPort.get(ip.port_id);
-    if (arr) arr.push(ip.ipv4_address);
-    else ipsByPort.set(ip.port_id, [ip.ipv4_address]);
+    if (arr) for (const a of addrs) arr.push(a);
+    else ipsByPort.set(ip.port_id, addrs);
   }
 
   const dockerVethRe = /^br-[a-f0-9]{12}$|^docker0$|^veth[a-f0-9]+$/;
@@ -71,10 +75,14 @@ app.get("/:hostname/overview", async (c) => {
     .filter((iface) => iface.mac && iface.mac !== "00:00:00:00:00:00");
 
   const deviceIps = findDeviceIps(ips, ports);
-  if (device.ip && !deviceIps.includes(device.ip)) deviceIps.push(device.ip);
+  if (device.ip && !deviceIps.includes(device.ip) && !engine.isOverlayIp(device.ip)) deviceIps.push(device.ip);
   const arpLanIps = cache.get<Map<string, string>>("arpLanIps");
   const arpLanIp = arpLanIps?.get(hostname);
   if (arpLanIp && !deviceIps.includes(arpLanIp)) deviceIps.unshift(arpLanIp);
+  const ndGlobalIpv6 = cache.get<Map<string, string[]>>("ndGlobalIpv6");
+  for (const v6 of ndGlobalIpv6?.get(hostname) ?? []) {
+    if (!deviceIps.includes(v6)) deviceIps.push(v6);
+  }
 
   const overview: DeviceOverview = {
     device: {
