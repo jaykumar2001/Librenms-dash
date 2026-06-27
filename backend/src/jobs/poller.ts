@@ -4,8 +4,8 @@ import { buildOverlayLinks, engine, isExcludedIface, isDockerIp, findLanIp } fro
 import { loadOuiDatabases, lookupVendor, normalizeMac } from "../librenms/oui.js";
 import { makeCidrMatcher } from "../librenms/cidr.js";
 import { ARP_EXCLUDED_SUBNETS, OVERLAY_SUBNET_LIST } from "../config.js";
-import { initWebSession, isWebClientEnabled, fetchRoutes, extractIfaceName, extractNextHop, stripHtml } from "../librenms/web-client.js";
-import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsLocation, LnmsAlert, LnmsLink, LnmsArpEntry } from "../librenms/types.js";
+import { initWebSession, isWebClientEnabled, fetchRoutes, fetchNdNeighbours, extractIfaceName, extractNextHop, stripHtml } from "../librenms/web-client.js";
+import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsLocation, LnmsAlert, LnmsLink, LnmsArpEntry, LnmsNdEntry } from "../librenms/types.js";
 import type { ArpLink, ArpDiscoveredDevice, DeviceRoute, AssetEvent } from "@librenms-dash/shared";
 
 const STAGGER_MS = 200;
@@ -702,6 +702,111 @@ export async function pollRoutes() {
   flushTopologyChanged();
 }
 
+export async function pollNdNeighbours() {
+  if (!isWebClientEnabled()) return;
+
+  const devices = cache.get<LnmsDevice[]>("devices");
+  if (!devices) return;
+
+  // Build mac → hostname map from cached port data
+  const macToHostname = new Map<string, string>();
+  const hostnameToLocation = new Map<string, string>();
+  for (const d of devices) {
+    hostnameToLocation.set(d.hostname, d.location || "Unknown");
+    const ports = cache.get<LnmsPort[]>(`ports:${d.hostname}`);
+    if (!ports) continue;
+    for (const p of ports) {
+      const mac = normalizeMac(p.ifPhysAddress ?? "");
+      if (mac && mac.length === 12 && mac !== "000000000000") macToHostname.set(mac, d.hostname);
+    }
+  }
+
+  const ndGlobalIpv6 = new Map<string, string[]>();
+  // Unmanaged: mac → { ips, vendor, seenByHostname, seenByPort, location }
+  const ndUnmanaged = new Map<string, { ips: Set<string>; vendor: string; seenByHostname: string; seenByPort: string; location: string }>();
+  const managedMacs = new Set(macToHostname.keys());
+
+  let totalEntries = 0;
+
+  for (const device of devices) {
+    if (device.status !== 1) continue;
+    const location = hostnameToLocation.get(device.hostname) ?? "Unknown";
+
+    try {
+      const entries = await fetchNdNeighbours(device.device_id);
+      if (!isWebClientEnabled()) return;
+      totalEntries += entries.length;
+
+      for (const entry of entries) {
+        const mac = normalizeMac(entry.mac);
+        if (!mac || mac.length !== 12 || mac === "000000000000") continue;
+        const ipv6 = entry.ipv6.trim();
+        if (!ipv6) continue;
+
+        // Only non-link-local, non-loopback addresses provide topology value
+        const isGlobal = !ipv6.startsWith("fe80:") && ipv6 !== "::1";
+        if (!isGlobal) continue;
+
+        if (macToHostname.has(mac)) {
+          // Known managed device — collect its global/ULA IPv6
+          const hostname = macToHostname.get(mac)!;
+          const list = ndGlobalIpv6.get(hostname) ?? [];
+          if (!list.includes(ipv6)) list.push(ipv6);
+          ndGlobalIpv6.set(hostname, list);
+        } else if (!managedMacs.has(mac)) {
+          // Unmanaged device visible only via ND
+          const existing = ndUnmanaged.get(mac);
+          if (existing) {
+            existing.ips.add(ipv6);
+          } else {
+            ndUnmanaged.set(mac, { ips: new Set([ipv6]), vendor: entry.vendor, seenByHostname: device.hostname, seenByPort: entry.portName, location });
+          }
+        }
+      }
+    } catch { /* skip */ }
+    await delay(STAGGER_MS);
+  }
+
+  cache.set("ndGlobalIpv6", ndGlobalIpv6, TTL.PORTS);
+
+  // Merge ND-only unmanaged devices into existing arpDevices
+  const existingArpDevices = cache.get<ArpDiscoveredDevice[]>("arpDevices") ?? [];
+  const existingMacSet = new Set(existingArpDevices.map((d) => normalizeMac(d.mac)));
+
+  const ndOnlyDevices: ArpDiscoveredDevice[] = [];
+  for (const [mac, info] of ndUnmanaged) {
+    if (existingMacSet.has(mac)) {
+      // Enrich existing ARP entry with IPv6 addresses
+      const existing = existingArpDevices.find((d) => normalizeMac(d.mac) === mac);
+      if (existing) {
+        for (const ip of info.ips) {
+          if (!existing.ips.includes(ip)) existing.ips.push(ip);
+        }
+      }
+      continue;
+    }
+    const siteId = info.location.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+    ndOnlyDevices.push({
+      mac,
+      macs: [mac],
+      ips: [...info.ips],
+      vendor: info.vendor || lookupVendor(mac),
+      location: info.location,
+      siteId,
+      seenByHostname: info.seenByHostname,
+      seenByInterface: info.seenByPort,
+      seenByIp: undefined,
+      seenByMac: undefined,
+    });
+  }
+
+  if (ndOnlyDevices.length > 0) {
+    cache.set("arpDevices", [...existingArpDevices, ...ndOnlyDevices], TTL.PORTS);
+  }
+
+  console.log(`[poller] ND: ${totalEntries} entries scanned, ${ndGlobalIpv6.size} managed devices enriched, ${ndOnlyDevices.length} ND-only unmanaged devices`);
+}
+
 let prevAlertIds = new Set<number>();
 
 export async function pollAlerts() {
@@ -732,6 +837,7 @@ export async function warmCache() {
   await pollAlerts();
   await pollPortsAndIps();
   await pollRoutes();
+  await pollNdNeighbours();
   console.log("[poller] Cache warm complete");
 }
 
@@ -755,4 +861,5 @@ export function startPoller() {
 
   // Routes: every 5 min (same as ports)
   safeInterval(pollRoutes, TTL.PORTS);
+  safeInterval(pollNdNeighbours, TTL.PORTS);
 }
