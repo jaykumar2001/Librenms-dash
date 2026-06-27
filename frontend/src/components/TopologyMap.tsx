@@ -253,6 +253,7 @@ export function TopologyMap({ data, sse }: Props) {
           dev.ip?.includes(qLower) ||
           dev.lanIp?.includes(qLower) ||
           dev.ips?.some((ip) => ip.includes(qLower)) ||
+          dev.allIps?.some((ip) => ip.includes(qLower)) ||
           dev.overlayPorts?.some((p) => p.ip?.includes(qLower)) ||
           (looksLikeMac && dev.macs?.some((m) => normalizeMacSearch(m).includes(qMac)))
         ) {

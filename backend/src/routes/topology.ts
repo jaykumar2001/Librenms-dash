@@ -61,6 +61,15 @@ app.get("/", (c) => {
     const deviceIps = findDeviceIps(ips, ports);
     if (device.ip && !deviceIps.includes(device.ip)) deviceIps.push(device.ip);
     const arpLanIp = arpLanIps.get(device.hostname);
+
+    // All addresses for search — includes link-local, ULA, and loopback IPv6
+    const allIpsSet = new Set<string>(deviceIps);
+    for (const entry of ips) {
+      if (entry.ipv4_address) allIpsSet.add(entry.ipv4_address);
+      const v6 = entry.ipv6_compressed ?? entry.ipv6_address;
+      if (v6) allIpsSet.add(v6);
+    }
+    if (device.ip) allIpsSet.add(device.ip);
     if (arpLanIp && engine.isOverlayIp(lanIp)) lanIp = arpLanIp;
     if (arpLanIp && !deviceIps.includes(arpLanIp)) deviceIps.unshift(arpLanIp);
 
@@ -71,6 +80,7 @@ app.get("/", (c) => {
       ip: device.ip,
       lanIp,
       ips: deviceIps,
+      allIps: [...allIpsSet],
       macs: [...macSet],
       os: device.os,
       icon: device.icon,
