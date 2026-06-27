@@ -54,7 +54,7 @@ app.get("/:hostname/overview", async (c) => {
   const ipsByPort = new Map<number, string[]>();
   for (const ip of ips) {
     const addrs: string[] = [];
-    if (ip.ipv4_address) addrs.push(ip.ipv4_address);
+    if (ip.ipv4_address && !engine.isOverlayIp(ip.ipv4_address)) addrs.push(ip.ipv4_address);
     const v6 = ip.ipv6_compressed ?? ip.ipv6_address;
     if (v6) addrs.push(v6);
     if (addrs.length === 0) continue;
@@ -75,7 +75,7 @@ app.get("/:hostname/overview", async (c) => {
     .filter((iface) => iface.mac && iface.mac !== "00:00:00:00:00:00");
 
   const deviceIps = findDeviceIps(ips, ports);
-  if (device.ip && !deviceIps.includes(device.ip)) deviceIps.push(device.ip);
+  if (device.ip && !deviceIps.includes(device.ip) && !engine.isOverlayIp(device.ip)) deviceIps.push(device.ip);
   const arpLanIps = cache.get<Map<string, string>>("arpLanIps");
   const arpLanIp = arpLanIps?.get(hostname);
   if (arpLanIp && !deviceIps.includes(arpLanIp)) deviceIps.unshift(arpLanIp);

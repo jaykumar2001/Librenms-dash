@@ -59,7 +59,7 @@ app.get("/", (c) => {
 
     let lanIp = findLanIp(device.ip, ips, ports);
     const deviceIps = findDeviceIps(ips, ports);
-    if (device.ip && !deviceIps.includes(device.ip)) deviceIps.push(device.ip);
+    if (device.ip && !deviceIps.includes(device.ip) && !engine.isOverlayIp(device.ip)) deviceIps.push(device.ip);
     const arpLanIp = arpLanIps.get(device.hostname);
 
     // All addresses for search — includes link-local, ULA, and loopback IPv6
