@@ -1,5 +1,5 @@
 import { LIBRENMS_URL, LIBRENMS_USER, LIBRENMS_PASS } from "../config.js";
-import type { LnmsRoute } from "./types.js";
+import type { LnmsRoute, LnmsNdEntry } from "./types.js";
 
 let sessionCookie = "";
 let csrfToken = "";
@@ -165,6 +165,78 @@ export async function fetchRoutes(deviceId: number): Promise<LnmsRoute[]> {
 
     const data = await res.json() as { rows?: LnmsRoute[]; total?: number };
     return data.rows ?? [];
+  } catch {
+    return [];
+  }
+}
+
+function parseNdTable(html: string): LnmsNdEntry[] {
+  const macHeaderIdx = html.indexOf('MAC address');
+  if (macHeaderIdx === -1) return [];
+
+  const tableStart = html.lastIndexOf('<table', macHeaderIdx);
+  const tableEnd = html.indexOf('</table>', macHeaderIdx) + '</table>'.length;
+  if (tableStart === -1 || tableEnd < '</table>'.length) return [];
+
+  const tableHtml = html.slice(tableStart, tableEnd);
+  const rowRe = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+  const cellRe = /<td[^>]*>([\s\S]*?)<\/td>/gi;
+  const stripTags = (s: string) => s.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+
+  const results: LnmsNdEntry[] = [];
+  let rowMatch: RegExpExecArray | null;
+  let isFirst = true;
+
+  while ((rowMatch = rowRe.exec(tableHtml)) !== null) {
+    if (isFirst) { isFirst = false; continue; } // skip header
+
+    const cells: string[] = [];
+    let cellMatch: RegExpExecArray | null;
+    cellRe.lastIndex = 0;
+    while ((cellMatch = cellRe.exec(rowMatch[1])) !== null) cells.push(cellMatch[1]);
+    if (cells.length < 4) continue;
+
+    const portHref = cells[0].match(/href="[^"]+\/port=(\d+)\/[^"]*"[^>]*>\s*([A-Za-z0-9._\-/]+)/);
+    const portName = portHref ? portHref[2].trim() : stripTags(cells[0]).split(' ')[0];
+    const portId = portHref ? parseInt(portHref[1], 10) : null;
+
+    const mac = stripTags(cells[1]);
+    const vendor = stripTags(cells[2]);
+    const ipv6 = stripTags(cells[3]);
+    if (!mac || !ipv6) continue;
+
+    const remoteDevMatch = cells[4]?.match(/href="[^"]*device=\d+[^"]*"[^>]*>\s*([^\n<]{1,60})/);
+    const remoteDevice = remoteDevMatch ? remoteDevMatch[1].trim() : '';
+
+    const remoteIfaceMatch = cells[5]?.match(/href="[^"]+\/port=\d+\/[^"]*"[^>]*>\s*([A-Za-z0-9._\-/]+)/);
+    const remoteInterface = remoteIfaceMatch ? remoteIfaceMatch[1].trim() : '';
+
+    results.push({ portName, portId, mac, vendor, ipv6, remoteDevice, remoteInterface });
+  }
+
+  return results;
+}
+
+export async function fetchNdNeighbours(deviceId: number): Promise<LnmsNdEntry[]> {
+  if (disabled) return [];
+
+  const path = `/device/${deviceId}/ports/nd`;
+
+  try {
+    let res = await webFetch(path);
+
+    if (res.status === 401 || res.status === 302 || res.status === 419) {
+      const ok = await login();
+      if (!ok) {
+        console.log("[web-client] ND polling disabled — re-authentication failed");
+        disabled = true;
+        return [];
+      }
+      res = await webFetch(path);
+    }
+
+    if (!res.ok) return [];
+    return parseNdTable(await res.text());
   } catch {
     return [];
   }
