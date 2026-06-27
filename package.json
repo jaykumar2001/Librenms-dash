@@ -11,6 +11,6 @@
   "scripts": {
     "dev": "pnpm --filter backend dev & pnpm --filter frontend dev",
     "build": "pnpm --filter frontend build && pnpm --filter backend build",
-    "start": "pnpm --filter backend start"
+    "start": "NODE_ENV=production node backend/dist/index.js"
   }
 }
