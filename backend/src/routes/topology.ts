@@ -70,6 +70,15 @@ app.get("/", (c) => {
       if (v6) allIpsSet.add(v6);
     }
     if (device.ip) allIpsSet.add(device.ip);
+
+    // ND-scraped global IPv6 for this device (not available via REST API)
+    const ndGlobalIpv6 = cache.get<Map<string, string[]>>("ndGlobalIpv6");
+    const deviceNdV6 = ndGlobalIpv6?.get(device.hostname) ?? [];
+    for (const v6 of deviceNdV6) {
+      if (!deviceIps.includes(v6)) deviceIps.push(v6);
+      allIpsSet.add(v6);
+    }
+
     if (arpLanIp && engine.isOverlayIp(lanIp)) lanIp = arpLanIp;
     if (arpLanIp && !deviceIps.includes(arpLanIp)) deviceIps.unshift(arpLanIp);
 

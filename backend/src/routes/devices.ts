@@ -79,6 +79,10 @@ app.get("/:hostname/overview", async (c) => {
   const arpLanIps = cache.get<Map<string, string>>("arpLanIps");
   const arpLanIp = arpLanIps?.get(hostname);
   if (arpLanIp && !deviceIps.includes(arpLanIp)) deviceIps.unshift(arpLanIp);
+  const ndGlobalIpv6 = cache.get<Map<string, string[]>>("ndGlobalIpv6");
+  for (const v6 of ndGlobalIpv6?.get(hostname) ?? []) {
+    if (!deviceIps.includes(v6)) deviceIps.push(v6);
+  }
 
   const overview: DeviceOverview = {
     device: {
