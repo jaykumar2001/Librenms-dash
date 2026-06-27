@@ -284,11 +284,11 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
                       <td className="py-0.5 px-2 font-mono text-gray-400">
                         <Copyable text={iface.mac} block>{iface.mac}</Copyable>
                       </td>
-                      <td className="py-0.5 px-2 font-mono text-gray-300">
+                      <td className="py-0.5 px-2 font-mono text-gray-300 overflow-hidden">
                         {iface.ips.length > 0
                           ? iface.ips.map((ip) => (
                               <div key={ip} className="leading-tight">
-                                <Copyable text={ip}>{ip}</Copyable>
+                                <Copyable text={ip} block>{ip}</Copyable>
                               </div>
                             ))
                           : "—"}
