@@ -187,7 +187,11 @@ export async function pollPortsAndIps() {
     for (const p of ports) if (p.ifName) currPorts.add(`${hostname}/${p.ifName}`);
   }
   for (const [hostname, ips] of allIps) {
-    for (const ip of ips) if (ip.ipv4_address) currIps.add(`${hostname} ${ip.ipv4_address}`);
+    for (const ip of ips) {
+      if (ip.ipv4_address) currIps.add(`${hostname} ${ip.ipv4_address}`);
+      const v6 = ip.ipv6_compressed ?? ip.ipv6_address;
+      if (v6 && !v6.startsWith("fe80:") && v6 !== "::1") currIps.add(`${hostname} ${v6}`);
+    }
   }
   prevAssets.ports = diffAndLog("port", prevAssets.ports, currPorts);
   prevAssets.ips = diffAndLog("ip", prevAssets.ips, currIps);
