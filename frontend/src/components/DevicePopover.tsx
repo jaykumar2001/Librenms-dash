@@ -285,13 +285,20 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
                         <Copyable text={iface.mac} block>{iface.mac}</Copyable>
                       </td>
                       <td className="py-0.5 px-2 font-mono text-gray-300 overflow-hidden">
-                        {iface.ips.length > 0
-                          ? iface.ips.map((ip) => (
-                              <div key={ip} className="leading-tight">
-                                <Copyable text={ip} block>{ip}</Copyable>
-                              </div>
-                            ))
-                          : "—"}
+                        {(() => {
+                          const displayIps = iface.ips.filter((ip) => {
+                            if (!ip.includes(":")) return true; // IPv4 always shown
+                            const l = ip.toLowerCase();
+                            return !l.startsWith("fe80:") && !l.startsWith("fc") && !l.startsWith("fd") && l !== "::1";
+                          });
+                          return displayIps.length > 0
+                            ? displayIps.map((ip) => (
+                                <div key={ip} className="leading-tight">
+                                  <Copyable text={ip} block>{ip}</Copyable>
+                                </div>
+                              ))
+                            : "—";
+                        })()}
                       </td>
                     </tr>
                   ))}
