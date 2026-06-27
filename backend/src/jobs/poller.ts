@@ -724,7 +724,6 @@ export async function pollNdNeighbours() {
   const ndGlobalIpv6 = new Map<string, string[]>();
   // Unmanaged: mac → { ips, vendor, seenByHostname, seenByPort, location }
   const ndUnmanaged = new Map<string, { ips: Set<string>; vendor: string; seenByHostname: string; seenByPort: string; location: string }>();
-  const managedMacs = new Set(macToHostname.keys());
 
   let totalEntries = 0;
 
@@ -744,7 +743,8 @@ export async function pollNdNeighbours() {
         if (!ipv6) continue;
 
         // Only non-link-local, non-loopback addresses provide topology value
-        const isGlobal = !ipv6.startsWith("fe80:") && ipv6 !== "::1";
+        const isGlobal = !ipv6.startsWith("fe80:") && ipv6 !== "::1"
+          && !ipv6.startsWith("fc") && !ipv6.startsWith("fd");
         if (!isGlobal) continue;
 
         if (macToHostname.has(mac)) {
@@ -753,7 +753,7 @@ export async function pollNdNeighbours() {
           const list = ndGlobalIpv6.get(hostname) ?? [];
           if (!list.includes(ipv6)) list.push(ipv6);
           ndGlobalIpv6.set(hostname, list);
-        } else if (!managedMacs.has(mac)) {
+        } else {
           // Unmanaged device visible only via ND
           const existing = ndUnmanaged.get(mac);
           if (existing) {
