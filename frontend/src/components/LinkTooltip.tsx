@@ -16,6 +16,7 @@ export interface LinkTooltipData {
   // ARP
   sourceIp?: string;
   targetIp?: string;
+  targetIps?: string[];
   mac?: string;
   targetMac?: string;
   // Overlay
@@ -76,7 +77,20 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
             {data.sourceMac && <Row label="MAC" value={data.sourceMac} mono copyable />}
             <SectionLabel label="Discovered device" />
             <Row label="Vendor" value={data.vendor || data.targetDisplayName || "Unknown"} />
-            <Row label="IP" value={data.targetIp ?? "—"} mono copyable />
+            {data.targetIps && data.targetIps.length > 0 ? (
+              <tr>
+                <td className="py-0.5 pr-2 text-gray-500 whitespace-nowrap align-top">IP</td>
+                <td className="py-0.5 font-mono">
+                  {data.targetIps.map((ip) => (
+                    <div key={ip} className="truncate max-w-[170px]" title={ip}>
+                      <Copyable text={ip}>{ip}</Copyable>
+                    </div>
+                  ))}
+                </td>
+              </tr>
+            ) : (
+              <Row label="IP" value={data.targetIp ?? "—"} mono copyable />
+            )}
             <Row label="MAC" value={data.mac ?? "—"} mono copyable />
           </tbody>
         </table>
