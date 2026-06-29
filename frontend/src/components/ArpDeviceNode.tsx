@@ -20,9 +20,9 @@ export function ArpDeviceNode({ node, highlighted, searchMatch, onMouseEnter, on
 
   const vendorShort = node.vendor.length > 18 ? node.vendor.slice(0, 17) + "…" : node.vendor;
   const macFormatted = formatMac(node.mac);
-  const ipDisplay = node.ips.length > 1
-    ? `${node.ips[0]} +${node.ips.length - 1}`
-    : node.ips[0] ?? "";
+  const ip0 = node.ips[0] ?? "";
+  const ipTrunc = ip0.length > 20 ? ip0.slice(0, 19) + "…" : ip0;
+  const ipDisplay = node.ips.length > 1 ? `${ipTrunc} +${node.ips.length - 1}` : ipTrunc;
   const active = isHovered || highlighted || searchMatch;
 
   const handleEnter = useCallback((e: React.MouseEvent) => {
