@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { cache } from "../cache/store.js";
 import { subscribeEvents, unsubscribeEvents, subscribeTopologyChanged, unsubscribeTopologyChanged } from "../jobs/poller.js";
-import type { AssetEvent } from "@librenms-dash/shared";
+import type { AssetEvent, TopologyResponse } from "@librenms-dash/shared";
 
 const app = new Hono();
 
@@ -19,8 +19,8 @@ app.get("/stream", (c) => {
 
     subscribeEvents(onEvents);
 
-    const onTopologyChanged = () => {
-      stream.writeSSE({ data: JSON.stringify({ ts: new Date().toISOString() }), event: "topology-changed" }).catch(() => {});
+    const onTopologyChanged = (payload: TopologyResponse) => {
+      stream.writeSSE({ data: JSON.stringify(payload), event: "topology-changed" }).catch(() => {});
     };
 
     subscribeTopologyChanged(onTopologyChanged);

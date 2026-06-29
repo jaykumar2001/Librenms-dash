@@ -4,6 +4,7 @@ import { serveStatic } from "@hono/node-server/serve-static";
 import { streamSSE } from "hono/streaming";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { compress } from "hono/compress";
 import { PORT } from "./config.js";
 import { warmCache, startPoller } from "./jobs/poller.js";
 import topologyRoutes from "./routes/topology.js";
@@ -16,6 +17,7 @@ import { requireAuth } from "./middleware/auth.js";
 
 const app = new Hono();
 
+app.use("*", compress());
 app.use("*", logger());
 app.use("*", cors({
   origin: process.env.NODE_ENV === "production"
