@@ -648,15 +648,29 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
   cache.set("arpLanIps", arpLanIps, TTL.PORTS);
 
-  cache.set("arpLinks", arpLinks, TTL.PORTS);
-  cache.set("arpDevices", arpDevices, TTL.PORTS);
-  console.log(`[poller] Cached ${arpLinks.length} ARP links, ${arpDevices.length} discovered devices (consolidated), ${arpLanIps.size} ARP-discovered LAN IPs from ${allArpEntries.length} ARP entries`);
+  // Preserve ND-only discovered devices (IPv6-only IPs) that pollNdNeighbours added.
+  // pollArpLinks can't see them — they have no ARP (IPv4) presence — so without this
+  // they get erased every cycle when we overwrite "arpDevices".
+  const prevArpDevices = cache.get<ArpDiscoveredDevice[]>("arpDevices") ?? [];
+  const consolidatedMacs = new Set(arpDevices.map(d => d.mac));
+  const ndOnlyPrev = prevArpDevices.filter(
+    d => !consolidatedMacs.has(d.mac) && d.ips.every(ip => ip.includes(":")),
+  );
+  const finalArpDevices = ndOnlyPrev.length > 0 ? [...arpDevices, ...ndOnlyPrev] : arpDevices;
 
-  const currArpDevices = new Set(arpDevices.map(d => {
+  cache.set("arpLinks", arpLinks, TTL.PORTS);
+  cache.set("arpDevices", finalArpDevices, TTL.PORTS);
+  console.log(`[poller] Cached ${arpLinks.length} ARP links, ${finalArpDevices.length} discovered devices (${arpDevices.length} ARP + ${ndOnlyPrev.length} ND-only), ${arpLanIps.size} ARP-discovered LAN IPs from ${allArpEntries.length} ARP entries`);
+
+  const currArpDevices = new Set(finalArpDevices.map(d => {
     const mac = d.mac.replace(/(.{2})(?=.)/g, "$1:");
     return `${mac} at ${d.location}`;
   }));
   prevAssets.arpDevices = diffAndLog("discovered-device", prevAssets.arpDevices, currArpDevices);
+  // Always trigger a rebuild — on the first run diffAndLog skips the baseline check
+  // and never sets topologyChangedInCycle, so flushTopologyChanged() would be a no-op,
+  // leaving the topology with the stale arpLinks:[] that pollNdNeighbours wrote.
+  topologyChangedInCycle = true;
   flushTopologyChanged();
 }
 
