@@ -51,7 +51,7 @@ export function useSSE() {
       isFirstOpen.current = false;
     };
     es.onerror = () => setConnected(false);
-    return () => { es.close(); setConnected(false); };
+    return () => { es.close(); setConnected(false); isFirstOpen.current = true; };
   }, [queryClient]);
 
   return { allEvents, connected };
