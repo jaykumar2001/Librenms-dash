@@ -228,7 +228,8 @@ function flushTopologyChanged() {
   if (!topologyChangedInCycle) return;
   topologyChangedInCycle = false;
   buildAndCacheTopology();
-  const payload = cache.get<TopologyResponse>("topology")!;
+  const payload = cache.get<TopologyResponse>("topology");
+  if (!payload) return;
   for (const fn of topologyListeners) fn(payload);
 }
 
@@ -1008,7 +1009,6 @@ export async function warmCache() {
   await pollPortsAndIps();
   await pollRoutes();
   await pollNdNeighbours();
-  buildAndCacheTopology();
   console.log("[poller] Cache warm complete");
 }
 
