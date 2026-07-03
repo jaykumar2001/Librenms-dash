@@ -160,6 +160,9 @@ export interface ArpDiscoveredDevice {
   seenByInterface?: string;
   seenByIp?: string;
   seenByMac?: string;
+  firstSeen: string; // ISO 8601
+  lastSeen: string;  // ISO 8601
+  stale: boolean;
 }
 
 export interface TopologyResponse {
