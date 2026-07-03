@@ -57,7 +57,7 @@ function upsertArpDevice(fields: Omit<ArpDeviceRecord, "firstSeen" | "lastSeen">
 Done once per cycle in `buildAndCacheTopology()`:
 
 ```ts
-const STALE_THRESHOLD_MS = 15 * 60 * 1000;      // 3x ND poll cycle (TTL.PORTS = 5min)
+const STALE_THRESHOLD_MS = 15 * 60 * 1000;      // 3x poll cycle (TTL.PORTS = DEVICE_POLL_MS = 5min)
 const RETENTION_MS = 24 * 60 * 60 * 1000;        // full removal
 
 const now = Date.now();
@@ -74,14 +74,27 @@ for (const [mac, rec] of arpDeviceRegistry) {
     stale: now - rec.lastSeen > STALE_THRESHOLD_MS,
   });
 }
+
+const currArpDevices = new Set(arpDevices.map(d => {
+  const mac = d.mac.replace(/(.{2})(?=.)/g, "$1:");
+  return `${mac} at ${d.location}`;
+}));
+prevAssets.arpDevices = diffAndLog("discovered-device", prevAssets.arpDevices, currArpDevices);
 ```
 
-- **15-minute stale threshold** (3× the 5-minute ND poll cycle) avoids flicker for ND-only devices, which would otherwise be falsely marked stale between their own poll passes.
+- **15-minute stale threshold**: both `pollArpLinks` (via `pollPortsAndIps`) and `pollNdNeighbours` run on the same 5-minute cadence (`TTL.PORTS` = `DEVICE_POLL_MS` = 5 min — confirmed in code; there is no fast/slow split between ARP and ND polling). 15 min = 3× that cycle, giving two full missed cycles of buffer before dimming, from either source.
 - **24-hour retention** before full removal from the registry and the published `arpDevices` array.
 
-### 3. Side effect: `AssetEvent` toast behavior improves for free
+### 3. Relocating the discovered-device diff/toast logic (fixes a real gap)
 
-`diffAndLog("discovered-device", ...)` (`poller.ts:669`) diffs the published `arpDevices` set cycle-to-cycle to fire "added"/"removed" toasts. Since the published array now includes stale-but-retained devices, "removed" only fires on actual 24h eviction (not on a single missed cycle), and "added" only fires on a genuinely first-ever sighting (not every time a stale device gets reconfirmed within the 24h window). No additional code needed — this falls out of the data model change.
+Today, `diffAndLog("discovered-device", ...)` lives inside `pollArpLinks` (`poller.ts:665-669`), diffing against that function's own local `finalArpDevices` snapshot. That snapshot is unrelated to the registry-based eviction in part 2 — if left in place, the 24h-eviction "removed" toast would never fire, because `pollArpLinks` never observes the eviction (it only runs its own ARP-consolidation pass).
+
+**Fix**: delete the `currArpDevices`/`diffAndLog` block from `pollArpLinks` entirely (lines 665-669). The diff now lives inside `buildAndCacheTopology()` (shown in the code block above), computed from the final post-eviction `arpDevices` array right before it's published. `pollArpLinks` keeps its unconditional `topologyChangedInCycle = true; flushTopologyChanged();` (`poller.ts:673-674`) unchanged — that's an unrelated cold-start guard for `arpLinks`, not tied to device diffing.
+
+This one relocation gives correct behavior for all three cases:
+- **New device** (via ARP or ND) → appears in `arpDevices` next `buildAndCacheTopology()` run → `diffAndLog` fires **added**.
+- **Device evicted at 24h** → disappears from `arpDevices` the cycle it's evicted → `diffAndLog` fires **removed**.
+- **Device goes stale** (15-min threshold) → stays in `arpDevices` (only `stale` flips true) → set membership unchanged → **no event fires**. Confirmed as the desired behavior: staleness is a silent visual-only transition (dimming), not a toast — avoids noise from a device flickering near the 15-min boundary. Only genuine add/24h-remove are toast-worthy.
 
 ### 4. Shared types
 
@@ -131,7 +144,7 @@ SSE topology-changed → frontend setQueryData → useForceLayout threads stale/
 | File | Change |
 |------|--------|
 | `shared/types.ts` | `ArpDiscoveredDevice` gains `firstSeen`, `lastSeen`, `stale` |
-| `backend/src/jobs/poller.ts` | New `arpDeviceRegistry` + `upsertArpDevice()`; `pollArpLinks`/`pollNdNeighbours` upsert instead of overwrite; `buildAndCacheTopology()` computes staleness/eviction; removes ND-only-preservation carve-out |
+| `backend/src/jobs/poller.ts` | New `arpDeviceRegistry` + `upsertArpDevice()`; `pollArpLinks`/`pollNdNeighbours` upsert instead of overwrite; `buildAndCacheTopology()` computes staleness/eviction and now owns the `discovered-device` diff/toast logic (moved out of `pollArpLinks`); removes ND-only-preservation carve-out |
 | `frontend/src/hooks/useForceLayout.ts` | Thread `stale`/`lastSeen` into `ArpDeviceLayoutNode` |
 | `frontend/src/components/ArpDeviceNode.tsx` | `stale` prop dims the node when not hovered/highlighted |
 | `frontend/src/components/TopologyMap.tsx` | Pass `stale`/`lastSeen` into `LinkTooltipData` for discovered-device hover |
@@ -147,5 +160,5 @@ SSE topology-changed → frontend setQueryData → useForceLayout threads stale/
 ## Trade-offs
 
 - **No cross-restart persistence**: a backend restart resets all `firstSeen`/`lastSeen` history, same as the rest of the topology cache today. Accepted — adding a database is out of scope (see Non-Goals).
-- **Single wall-clock stale threshold, not per-source**: an ARP-only device could theoretically be flagged stale a little later than the instant it truly vanishes (up to 15 min), since the threshold is sized for the slower ND cadence. Simpler than tracking per-source "reconfirmed this cycle" state; acceptable for v1.
+- **Single wall-clock stale threshold, not per-source**: any device could be flagged stale up to ~15 min after it actually stopped appearing, rather than the instant it's confirmed missing from a single poll pass. Simpler than tracking per-source "reconfirmed this cycle" state; acceptable for v1.
 - **Registry grows unbounded between evictions**: in practice bounded by the number of distinct MACs seen on the network in any 24h window, which is the same order of magnitude as today's `arpDevices` array — no new unbounded-growth risk.
