@@ -1194,6 +1194,8 @@ export function TopologyMap({ data, sse }: Props) {
                     interface: ad.seenByInterface,
                     sourceMac: ad.seenByMac ? formatMac(ad.seenByMac) : undefined,
                     vendor: ad.vendor,
+                    stale: ad.stale,
+                    lastSeen: ad.lastSeen,
                   })}
                   onMouseLeave={hideLinkTooltip}
                 />
@@ -1228,6 +1230,8 @@ export function TopologyMap({ data, sse }: Props) {
               interface: ad.seenByInterface,
               sourceMac: ad.seenByMac ? formatMac(ad.seenByMac) : undefined,
               vendor: ad.vendor,
+              stale: ad.stale,
+              lastSeen: ad.lastSeen,
             });
             return (
               <ArpDeviceNode

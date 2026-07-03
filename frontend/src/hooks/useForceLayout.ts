@@ -74,6 +74,8 @@ export interface ArpDeviceLayoutNode {
   seenByInterface?: string;
   seenByIp?: string;
   seenByMac?: string;
+  stale: boolean;
+  lastSeen: string;
   x: number;
   y: number;
 }
@@ -374,6 +376,8 @@ function layoutAll(
           seenByInterface: ad.seenByInterface,
           seenByIp: ad.seenByIp,
           seenByMac: ad.seenByMac,
+          stale: ad.stale,
+          lastSeen: ad.lastSeen,
           x: arpStartX + ARP_NODE_W / 2 + col * (ARP_NODE_W + ARP_NODE_GAP_X),
           y: arpStartY + ARP_SECTION_LABEL_H + ARP_SECTION_PAD + ARP_NODE_H / 2 + row * (ARP_NODE_H + ARP_NODE_GAP_Y),
         });

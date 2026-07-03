@@ -1,4 +1,5 @@
 import { Copyable } from "./Copyable";
+import { formatTimestamp } from "./DevicePopover";
 
 export interface LinkTooltipData {
   type: "lldp" | "arp" | "overlay" | "arp-device";
@@ -28,6 +29,8 @@ export interface LinkTooltipData {
   interface?: string;
   vendor?: string;
   sourceMac?: string;
+  stale?: boolean;
+  lastSeen?: string;
 }
 
 const OVERLAY_LABELS: Record<string, string> = {
@@ -92,6 +95,7 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
               <Row label="IP" value={data.targetIp ?? "—"} mono copyable />
             )}
             <Row label="MAC" value={data.mac ?? "—"} mono copyable />
+            {data.stale && data.lastSeen && <Row label="Last seen" value={formatTimestamp(data.lastSeen)} />}
           </tbody>
         </table>
       ) : data.type === "arp" ? (

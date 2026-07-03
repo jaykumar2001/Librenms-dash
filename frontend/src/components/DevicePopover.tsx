@@ -27,7 +27,7 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m`;
 }
 
-function formatTimestamp(ts: string): string {
+export function formatTimestamp(ts: string): string {
   if (!ts) return "—";
   const d = new Date(ts.replace(" ", "T"));
   if (isNaN(d.getTime())) return ts;
