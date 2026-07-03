@@ -23,7 +23,10 @@ export class ArpDeviceRegistry {
   }
 
   get(mac: string): ArpDeviceFields | undefined {
-    return this.records.get(mac);
+    const rec = this.records.get(mac);
+    if (!rec) return undefined;
+    const { firstSeen, lastSeen, ...fields } = rec;
+    return fields;
   }
 
   publish(now: number = Date.now()): ArpDiscoveredDevice[] {

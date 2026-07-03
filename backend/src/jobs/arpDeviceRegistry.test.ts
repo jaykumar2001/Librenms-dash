@@ -33,6 +33,9 @@ describe("ArpDeviceRegistry", () => {
     const justBefore = registry.publish(t0 + STALE_THRESHOLD_MS - 1);
     expect(justBefore[0].stale).toBe(false);
 
+    const atExactly = registry.publish(t0 + STALE_THRESHOLD_MS);
+    expect(atExactly[0].stale).toBe(false);
+
     const justAfter = registry.publish(t0 + STALE_THRESHOLD_MS + 1);
     expect(justAfter[0].stale).toBe(true);
   });
