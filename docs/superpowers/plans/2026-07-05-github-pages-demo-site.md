@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a public static demo of the Librenms-dash topology UI at `/home/jkumar/librenms-dash.github.io`, reusing the real frontend components against a real-but-fully-anonymized topology snapshot, with no backend, no auth wall, and no live network calls.
+**Goal:** Build a public static demo of the Librenms-dash topology UI at `/home/jkumar/Librenms-dash/librenms-dash.github.io`, reusing the real frontend components against a real-but-fully-anonymized topology snapshot, with no backend, no auth wall, and no live network calls.
 
 **Architecture:** Standalone Vite + React + TypeScript + Tailwind app. Presentation components/hooks are copied from `/home/jkumar/Librenms-dash/frontend/src` (most verbatim, a handful with a one-line import-path edit). Backend-dependent hooks (`useTopology`, `useDeviceDetail`, `useSSE`) are replaced with static-data equivalents. A one-time Node/vitest-tested anonymization pipeline (`scripts/anonymize/`) pulls a real snapshot from the currently-running app, remaps every identifying value (IPs, MACs, hostnames, site names/coords, serials) through consistent fake-value tables, scrubs free text, and writes the result to `src/data/*.json`, which the app imports directly (no fetch).
 
@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Source spec: `docs/superpowers/specs/2026-07-05-github-pages-demo-site-design.md` (in this repo). Every requirement there must be traceable to a task below.
-- Target repo root: `/home/jkumar/librenms-dash.github.io` (already a git repo, currently empty). All file paths below are relative to that root unless explicitly marked `(source repo)`.
+- Target repo root: `/home/jkumar/Librenms-dash/librenms-dash.github.io` (already a git repo, currently empty). All file paths below are relative to that root unless explicitly marked `(source repo)`.
 - `(source repo)` paths are relative to `/home/jkumar/Librenms-dash` — read-only reference, never modified by this plan.
 - Build output directory: `docs/` (vite `build.outDir`). GitHub Pages will be configured (by the user, outside this plan) to serve `main` branch `/docs`.
 - No backend, no `/api/*` calls, no auth screens anywhere in the shipped app.
@@ -157,11 +157,11 @@ Note: `docs/` (the build output) is gitignored during scaffolding so early tasks
 - [ ] **Step 6: Copy static assets and styles**
 
 ```bash
-cp /home/jkumar/Librenms-dash/frontend/public/favicon.svg /home/jkumar/librenms-dash.github.io/public/favicon.svg
-cp /home/jkumar/Librenms-dash/frontend/public/logo.svg /home/jkumar/librenms-dash.github.io/public/logo.svg
-cp /home/jkumar/Librenms-dash/frontend/public/logo-maskable.svg /home/jkumar/librenms-dash.github.io/public/logo-maskable.svg
-cp /home/jkumar/Librenms-dash/frontend/public/manifest.webmanifest /home/jkumar/librenms-dash.github.io/public/manifest.webmanifest
-cp /home/jkumar/Librenms-dash/frontend/src/styles.css /home/jkumar/librenms-dash.github.io/src/styles.css
+cp /home/jkumar/Librenms-dash/frontend/public/favicon.svg /home/jkumar/Librenms-dash/librenms-dash.github.io/public/favicon.svg
+cp /home/jkumar/Librenms-dash/frontend/public/logo.svg /home/jkumar/Librenms-dash/librenms-dash.github.io/public/logo.svg
+cp /home/jkumar/Librenms-dash/frontend/public/logo-maskable.svg /home/jkumar/Librenms-dash/librenms-dash.github.io/public/logo-maskable.svg
+cp /home/jkumar/Librenms-dash/frontend/public/manifest.webmanifest /home/jkumar/Librenms-dash/librenms-dash.github.io/public/manifest.webmanifest
+cp /home/jkumar/Librenms-dash/frontend/src/styles.css /home/jkumar/Librenms-dash/librenms-dash.github.io/src/styles.css
 ```
 
 - [ ] **Step 7: Create placeholder `src/main.tsx`**
@@ -194,7 +194,7 @@ export function App() {
 - [ ] **Step 9: Install and verify the build**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 npm install
 npm run build
 ```
@@ -204,7 +204,7 @@ Expected: `npm run build` completes with no errors, producing `docs/index.html` 
 - [ ] **Step 10: Commit**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 git add package.json package-lock.json tsconfig.json vite.config.ts index.html .gitignore src public
 git commit -m "Scaffold Vite/React/Tailwind demo app"
 ```
@@ -238,7 +238,7 @@ None of these files import `@librenms-dash/shared` or anything backend-related (
 
 ```bash
 SRC=/home/jkumar/Librenms-dash/frontend/src
-DST=/home/jkumar/librenms-dash.github.io/src
+DST=/home/jkumar/Librenms-dash/librenms-dash.github.io/src
 SHARED=/home/jkumar/Librenms-dash/shared
 
 mkdir -p "$DST/hooks/layout" "$DST/lib"
@@ -261,7 +261,7 @@ cp "$SRC/lib/format.ts" "$DST/lib/format.ts"
 - [ ] **Step 2: Verify the build still passes**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 npm run build
 ```
 
@@ -295,7 +295,7 @@ These four files are otherwise identical to the source repo. `DevicePopover` is 
 
 ```bash
 SRC=/home/jkumar/Librenms-dash/frontend/src
-DST=/home/jkumar/librenms-dash.github.io/src
+DST=/home/jkumar/Librenms-dash/librenms-dash.github.io/src
 
 cp "$SRC/hooks/useForceLayout.ts" "$DST/hooks/useForceLayout.ts"
 cp "$SRC/components/DeviceNode.tsx" "$DST/components/DeviceNode.tsx"
@@ -397,7 +397,7 @@ export function App() {
 - [ ] **Step 6: Build and smoke-test in the browser**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 npm run build
 npm run dev
 ```
@@ -531,7 +531,7 @@ describe("scrub()", () => {
 - [ ] **Step 2: Run tests to verify they fail**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 npx vitest run scripts/anonymize/engine.test.ts
 ```
 
@@ -1325,7 +1325,7 @@ AUTH_PASSWORD=
 - [ ] **Step 3: Create the real `.env.local` (gitignored, never committed)**
 
 ```bash
-cat > /home/jkumar/librenms-dash.github.io/.env.local <<'EOF'
+cat > /home/jkumar/Librenms-dash/librenms-dash.github.io/.env.local <<'EOF'
 BACKEND_URL=http://localhost:3001
 AUTH_USERNAME=admin
 AUTH_PASSWORD=spiderman
@@ -1352,7 +1352,7 @@ docker compose ps
 Expected: the `librenms-dash` service shows `Up`. If not, run `docker-compose up -d` there first and wait for it to become healthy.
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 npm run anonymize
 ```
 
@@ -1367,7 +1367,7 @@ If it instead prints `AUDIT FAILED`, stop — do not commit. Inspect the listed 
 The automated audit only checks exact real strings the script already knows about (site names/ids, hostnames, displayNames). Manually grep for the categories of leakage automation can't fully guarantee — partial IP octets and MAC OUI prefixes from the real network, in case any raw un-anonymized value slipped through a field the transform didn't cover:
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 grep -o '"[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}"' src/data/topology.json src/data/deviceOverviews.json | sort -u | grep -v '"10\.2[0-9][0-9]\.' | grep -v '"127\.0\.0\.1"'
 ```
 
@@ -1472,7 +1472,7 @@ export function useDeviceDetail(hostname: string | null) {
 Copy the original as a starting point:
 
 ```bash
-cp /home/jkumar/Librenms-dash/frontend/src/components/DevicePopover.tsx /home/jkumar/librenms-dash.github.io/src/components/DevicePopover.tsx
+cp /home/jkumar/Librenms-dash/frontend/src/components/DevicePopover.tsx /home/jkumar/Librenms-dash/librenms-dash.github.io/src/components/DevicePopover.tsx
 ```
 
 Then apply these edits:
@@ -1549,7 +1549,7 @@ New:
 - [ ] **Step 4: Build and smoke-test**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 npm run build
 npm run dev
 ```
@@ -1633,7 +1633,7 @@ export function useDemoEvents() {
 - [ ] **Step 2: Build to verify it compiles**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 npm run build
 ```
 
@@ -1689,7 +1689,7 @@ node_modules/
 - [ ] **Step 3: Production build**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 rm -rf docs
 npm run build
 ```
@@ -1716,14 +1716,14 @@ If any of these fail, fix the responsible file from the earlier task before proc
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /home/jkumar/librenms-dash.github.io
+cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 git add .gitignore src/App.tsx docs
 git commit -m "Wire final demo app and commit production build to docs/"
 ```
 
 - [ ] **Step 6: Report to the user**
 
-Tell the user the demo repo is ready at `/home/jkumar/librenms-dash.github.io` with the build committed to `docs/`, and that they still need to (outside this plan, since it touches GitHub's hosted settings, not local files): create the GitHub repository (if not already), push `main`, and enable GitHub Pages in the repo settings with source = `main` branch, `/docs` folder.
+Tell the user the demo repo is ready at `/home/jkumar/Librenms-dash/librenms-dash.github.io` with the build committed to `docs/`, and that they still need to (outside this plan, since it touches GitHub's hosted settings, not local files): create the GitHub repository (if not already), push `main`, and enable GitHub Pages in the repo settings with source = `main` branch, `/docs` folder.
 
 ---
 
