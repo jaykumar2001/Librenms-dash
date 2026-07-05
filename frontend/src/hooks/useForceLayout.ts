@@ -44,6 +44,7 @@ export interface ArpLayoutLink {
   fromMac?: string;
   toInterface?: string;
   toMac?: string;
+  sourceDown: boolean;
 }
 
 export interface SiteCluster {
@@ -76,6 +77,7 @@ export interface ArpDeviceLayoutNode {
   seenByMac?: string;
   stale: boolean;
   lastSeen: string;
+  sourceDown: boolean;
   x: number;
   y: number;
 }
@@ -378,6 +380,7 @@ function layoutAll(
           seenByMac: ad.seenByMac,
           stale: ad.stale,
           lastSeen: ad.lastSeen,
+          sourceDown: ad.sourceDown,
           x: arpStartX + ARP_NODE_W / 2 + col * (ARP_NODE_W + ARP_NODE_GAP_X),
           y: arpStartY + ARP_SECTION_LABEL_H + ARP_SECTION_PAD + ARP_NODE_H / 2 + row * (ARP_NODE_H + ARP_NODE_GAP_Y),
         });
@@ -439,6 +442,7 @@ function layoutAll(
         fromMac: a.fromMac,
         toInterface: a.toInterface,
         toMac: a.toMac,
+        sourceDown: a.sourceDown,
       });
     }
   }

@@ -10,6 +10,7 @@ const baseDevice: ArpDeviceFields = {
   location: "HQ",
   siteId: "hq",
   seenByHostname: "switch1",
+  sourceDown: false,
 };
 
 describe("ArpDeviceRegistry", () => {

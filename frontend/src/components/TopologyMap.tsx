@@ -31,6 +31,7 @@ const LINK_HOVER_DELAY = 1000;
 
 const NEIGHBOR_COLOR = "#38bdf8";
 const ARP_COLOR = "#fbbf24";
+const ARP_SOURCE_DOWN_COLOR = "#f87171";
 const OVERLAY_PALETTE = [
   "#a78bfa", "#f472b6", "#34d399", "#fbbf24",
   "#60a5fa", "#fb923c", "#2dd4bf", "#c084fc",
@@ -1069,12 +1070,13 @@ export function TopologyMap({ data, sse }: Props) {
             if (sx == null || sy == null || tx == null || ty == null) return null;
             const key = `arp-${al.source.hostname}-${al.target.hostname}`;
             const linked = highlightedId === al.source.hostname || highlightedId === al.target.hostname;
+            const color = al.sourceDown ? ARP_SOURCE_DOWN_COLOR : ARP_COLOR;
             return (
               <HoverableLinkPath
                 key={key}
                 linkKey={key}
                 sx={sx} sy={sy} tx={tx} ty={ty}
-                color={ARP_COLOR}
+                color={color}
                 hovered={hoveredLinkKey === key}
                 highlighted={linked}
                 sourceSide={deviceSide.get(al.source.hostname)}
@@ -1087,13 +1089,14 @@ export function TopologyMap({ data, sse }: Props) {
                   targetHostname: al.target.hostname,
                   sourceDisplayName: displayName(al.source.hostname),
                   targetDisplayName: displayName(al.target.hostname),
-                  color: ARP_COLOR,
+                  color,
                   sourceIp: al.fromIp,
                   sourceInterface: al.fromInterface,
                   targetIp: al.toIp,
                   targetInterface: al.toInterface,
                   mac: formatMac(al.fromMac ?? al.mac),
                   targetMac: al.toMac ? formatMac(al.toMac) : undefined,
+                  sourceDown: al.sourceDown,
                 })}
                 onMouseLeave={hideLinkTooltip}
               />
@@ -1170,6 +1173,7 @@ export function TopologyMap({ data, sse }: Props) {
             const hovered = hoveredLinkKey === key;
             const linked = highlightedId === ad.seenByHostname || highlightedId === ad.mac;
             const parentDev = deviceMap.get(ad.seenByHostname);
+            const color = ad.sourceDown ? ARP_SOURCE_DOWN_COLOR : ARP_COLOR;
             return (
               <g key={key}>
                 {/* Wide invisible hit area */}
@@ -1187,7 +1191,7 @@ export function TopologyMap({ data, sse }: Props) {
                     targetHostname: ad.mac,
                     sourceDisplayName: displayName(ad.seenByHostname),
                     targetDisplayName: ad.vendor || "Unknown device",
-                    color: ARP_COLOR,
+                    color,
                     sourceIp: ad.seenByIp ?? parentDev?.lanIp ?? parentDev?.ip ?? "",
                     targetIps: ad.ips,
                     mac: formatMac(ad.mac),
@@ -1196,12 +1200,13 @@ export function TopologyMap({ data, sse }: Props) {
                     vendor: ad.vendor,
                     stale: ad.stale,
                     lastSeen: ad.lastSeen,
+                    sourceDown: ad.sourceDown,
                   })}
                   onMouseLeave={hideLinkTooltip}
                 />
                 <path
                   d={d}
-                  stroke={ARP_COLOR}
+                  stroke={color}
                   strokeWidth={hovered || linked ? 2 : 1}
                   strokeOpacity={hovered || linked ? 0.9 : 0.35}
                   strokeDasharray="3 3"
@@ -1223,7 +1228,7 @@ export function TopologyMap({ data, sse }: Props) {
               targetHostname: ad.mac,
               sourceDisplayName: displayName(ad.seenByHostname),
               targetDisplayName: ad.vendor || "Unknown device",
-              color: ARP_COLOR,
+              color: ad.sourceDown ? ARP_SOURCE_DOWN_COLOR : ARP_COLOR,
               sourceIp: ad.seenByIp ?? parentDev?.lanIp ?? parentDev?.ip ?? "",
               targetIps: ad.ips,
               mac: formatMac(ad.mac),
@@ -1232,6 +1237,7 @@ export function TopologyMap({ data, sse }: Props) {
               vendor: ad.vendor,
               stale: ad.stale,
               lastSeen: ad.lastSeen,
+              sourceDown: ad.sourceDown,
             });
             return (
               <ArpDeviceNode

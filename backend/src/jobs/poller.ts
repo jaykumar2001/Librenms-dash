@@ -415,6 +415,10 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
   // Active device IDs — used to restrict which devices can be "seenBy" sources
   const activeDeviceIds = new Set(devices.map((d) => d.device_id));
+  // Enabled devices that are currently down — their LibreNMS ARP cache may be
+  // stale (from before they went down), so entries sourced from them are kept
+  // but flagged via sourceDown rather than treated as fresh sightings.
+  const downDeviceIds = new Set(devices.filter((d) => d.status !== 1).map((d) => d.device_id));
 
   // Map each port_id to its interface name (from the per-device port cache) so
   // ARP links/devices can report which interface a device learned a peer on.
@@ -539,6 +543,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
           fromMac: fromMac ?? entry.mac_address,
           toInterface: ifName || undefined,
           toMac,
+          sourceDown: downDeviceIds.has(entry.device_id),
         });
       }
     } catch {
@@ -588,6 +593,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
       fromMac: mac,
       toInterface: ifName || undefined,
       toMac,
+      sourceDown: downDeviceIds.has(entry.device_id),
     });
   }
 
@@ -637,7 +643,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
 
   // --- Consolidation: union-find to merge MACs sharing an IP and IPs sharing a MAC ---
-  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, portIdToMac, portIdToIp, activeDeviceIds);
+  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, portIdToMac, portIdToIp, activeDeviceIds, downDeviceIds);
 
   // Discover LAN IPs for managed devices from ARP entries where a device's
   // interface MAC is seen at a non-overlay, non-docker IP. This catches devices
@@ -682,6 +688,7 @@ function consolidateArpDevices(
   portIdToMac: Map<number, string>,
   portIdToIp: Map<number, string>,
   activeDeviceIds: Set<number>,
+  downDeviceIds: Set<number>,
 ): ArpDeviceFields[] {
   // Phase 1: collect valid (mac, ip) pairs, grouped by location.
   // Scoping by location prevents cross-site merging from swallowing devices.
@@ -761,16 +768,17 @@ function consolidateArpDevices(
     }
 
     // Group pairs by component
-    const components = new Map<string, { macs: Set<string>; ips: Set<string>; deviceId: number; portId: number }>();
+    const components = new Map<string, { macs: Set<string>; ips: Set<string>; deviceId: number; portId: number; deviceIds: Set<number> }>();
     for (const p of pairs) {
       const root = find(`mac:${p.mac}`);
       let comp = components.get(root);
       if (!comp) {
-        comp = { macs: new Set(), ips: new Set(), deviceId: p.deviceId, portId: p.portId };
+        comp = { macs: new Set(), ips: new Set(), deviceId: p.deviceId, portId: p.portId, deviceIds: new Set() };
         components.set(root, comp);
       }
       comp.macs.add(p.mac);
       comp.ips.add(p.ip);
+      comp.deviceIds.add(p.deviceId);
     }
 
     // Build output — one entry per component per location
@@ -799,6 +807,10 @@ function consolidateArpDevices(
         return 0;
       });
 
+      // A device seen by at least one currently-up source is never flagged
+      // sourceDown, even if other contributing sources are down.
+      const sourceDown = [...comp.deviceIds].every((id) => downDeviceIds.has(id));
+
       arpDevices.push({
         mac: bestMac,
         macs: macArr,
@@ -810,6 +822,7 @@ function consolidateArpDevices(
         seenByInterface: portIdToIfName.get(comp.portId),
         seenByIp: portIdToIp.get(comp.portId),
         seenByMac: portIdToMac.get(comp.portId),
+        sourceDown,
       });
     }
   }
@@ -979,6 +992,7 @@ export async function pollNdNeighbours() {
       seenByInterface: info.seenByPort,
       seenByIp: undefined,
       seenByMac: undefined,
+      sourceDown: false,
     });
     ndOnlyNewCount++;
   }
