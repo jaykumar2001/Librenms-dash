@@ -258,14 +258,16 @@ cp "$SRC/lib/linkGeometry.ts" "$DST/lib/linkGeometry.ts"
 cp "$SRC/lib/format.ts" "$DST/lib/format.ts"
 ```
 
-- [ ] **Step 2: Verify the build still passes**
+- [ ] **Step 2: Verify the build — expected partial failure**
 
 ```bash
 cd /home/jkumar/Librenms-dash/librenms-dash.github.io
 npm run build
 ```
 
-Expected: succeeds. `tsc -b` type-checks every file under `src/` (per `tsconfig.json` `include`), so this confirms all 13 copied files compile standalone even though nothing imports them yet.
+Correction to this task's original expectation: this will **not** fully succeed yet, and that's fine. Five of the copied files reference two files that Task 3 creates (`@/hooks/useForceLayout` and `./DevicePopover`): `ArpDeviceNode.tsx`, `OverlayLink.tsx`, and `SiteGroup.tsx` import types from `useForceLayout`; `usePersistedLayout.ts` imports from `useForceLayout`; `LinkTooltip.tsx` imports `formatTimestamp` from `DevicePopover`. `tsc -b` type-checks every file under `src/`, so it will report `Cannot find module '@/hooks/useForceLayout'` / `Cannot find module './useForceLayout'` / `Cannot find module './DevicePopover'` for exactly those five files.
+
+Expected: the build fails, and **every** reported error is one of those three "Cannot find module" messages, pointing only at `ArpDeviceNode.tsx`, `OverlayLink.tsx`, `SiteGroup.tsx`, `usePersistedLayout.ts`, or `LinkTooltip.tsx`. If you see any other kind of error, or an error in a different file, stop and fix it — that's a real problem. Otherwise this partial failure is the correct, expected state; proceed to commit. Task 3 adds the missing files and the build will succeed from that point on.
 
 - [ ] **Step 3: Commit**
 
