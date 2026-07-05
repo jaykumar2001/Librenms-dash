@@ -187,6 +187,7 @@ export interface TopologyResponse {
 export interface DeviceInterface {
   ifName: string;
   mac: string;
+  vendor: string;
   ifOperStatus: string;
   ips: string[];
 }
