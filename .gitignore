@@ -25,3 +25,7 @@ share/
 # Stale compiled output from the types-only shared package (source is types.ts)
 shared/types.js
 shared/types.d.ts
+
+# Independent git repo for the public GitHub Pages demo site — nested here for
+# tooling convenience only, tracked entirely by its own repo, not this one.
+/librenms-dash.github.io/
