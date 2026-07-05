@@ -356,7 +356,7 @@ New:
 
 This file is fully replaced in Task 7. It exists here only so Task 3's build/visual check doesn't depend on Task 7 being done first.
 
-Create `src/components/DevicePopover.tsx`:
+Create `src/components/DevicePopover.tsx`. Note: this stub must also export `formatTimestamp`, copied verbatim from `(source repo)/frontend/src/components/DevicePopover.tsx` — `LinkTooltip.tsx` (copied in Task 2) imports it from `./DevicePopover`, so the build won't pass without it:
 
 ```tsx
 interface Props {
@@ -368,6 +368,21 @@ interface Props {
   onMouseEnter: () => void;
   onMouseLeave: () => void;
   onClose?: () => void;
+}
+
+export function formatTimestamp(ts: string): string {
+  if (!ts) return "—";
+  const d = new Date(ts.replace(" ", "T"));
+  if (isNaN(d.getTime())) return ts;
+  const now = Date.now();
+  const diff = now - d.getTime();
+  if (diff < 0) return d.toLocaleString();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ${mins % 60}m ago`;
+  return d.toLocaleString();
 }
 
 export function DevicePopover(_props: Props) {
