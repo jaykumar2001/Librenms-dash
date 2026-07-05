@@ -903,13 +903,26 @@ export async function pollNdNeighbours() {
   const devices = cache.get<LnmsDevice[]>("devices");
   if (!devices) return;
 
-  // Build mac → hostname map from cached port data
+  // Build mac → hostname map from cached port data. Falls back to a live fetch
+  // when the ports cache entry has expired (TTL.PORTS matches this job's own
+  // poll interval, so a device processed early in pollPortsAndIps's cycle can
+  // otherwise race past expiry right before this runs) — without this, a
+  // managed device's interface MAC would be silently excluded from this map
+  // and wrongly get inserted into the discovered-device registry as unmanaged.
   const macToHostname = new Map<string, string>();
   const hostnameToLocation = new Map<string, string>();
   for (const d of devices) {
     hostnameToLocation.set(d.hostname, d.location || "Unknown");
-    const ports = cache.get<LnmsPort[]>(`ports:${d.hostname}`);
-    if (!ports) continue;
+    let ports: Array<{ ifPhysAddress?: string }> | undefined = cache.get<LnmsPort[]>(`ports:${d.hostname}`) ?? undefined;
+    if (!ports) {
+      try {
+        const res = await librenmsGet<{ ports: Array<{ ifPhysAddress?: string }> }>(`/devices/${d.hostname}/ports`, { columns: "port_id,ifPhysAddress" });
+        ports = res.ports ?? [];
+      } catch {
+        continue;
+      }
+      await delay(50);
+    }
     for (const p of ports) {
       const mac = normalizeMac(p.ifPhysAddress ?? "");
       if (mac && mac.length === 12 && mac !== "000000000000") macToHostname.set(mac, d.hostname);
