@@ -1,4 +1,5 @@
 import { Copyable } from "./Copyable";
+import { formatTimestamp } from "./DevicePopover";
 
 export interface LinkTooltipData {
   type: "lldp" | "arp" | "overlay" | "arp-device";
@@ -28,6 +29,9 @@ export interface LinkTooltipData {
   interface?: string;
   vendor?: string;
   sourceMac?: string;
+  stale?: boolean;
+  lastSeen?: string;
+  sourceDown?: boolean;
 }
 
 const OVERLAY_LABELS: Record<string, string> = {
@@ -75,6 +79,7 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
             {data.interface && <Row label="Interface" value={data.interface} mono />}
             {data.sourceIp && <Row label="IP" value={data.sourceIp} mono copyable />}
             {data.sourceMac && <Row label="MAC" value={data.sourceMac} mono copyable />}
+            {data.sourceDown && <Row label="Source" value="Device down — cached ARP" />}
             <SectionLabel label="Discovered device" />
             <Row label="Vendor" value={data.vendor || data.targetDisplayName || "Unknown"} />
             {data.targetIps && data.targetIps.length > 0 ? (
@@ -92,6 +97,7 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
               <Row label="IP" value={data.targetIp ?? "—"} mono copyable />
             )}
             <Row label="MAC" value={data.mac ?? "—"} mono copyable />
+            {data.stale && data.lastSeen && <Row label="Last seen" value={formatTimestamp(data.lastSeen)} />}
           </tbody>
         </table>
       ) : data.type === "arp" ? (
@@ -107,6 +113,7 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
             {data.targetInterface && <Row label="Interface" value={data.targetInterface} mono />}
             {data.targetIp && <Row label="IP" value={data.targetIp} mono copyable />}
             {data.targetMac && <Row label="MAC" value={data.targetMac} mono copyable />}
+            {data.sourceDown && <Row label="Source" value="Device down — cached ARP" />}
           </tbody>
         </table>
       ) : (

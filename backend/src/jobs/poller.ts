@@ -6,7 +6,9 @@ import { makeCidrMatcher } from "../librenms/cidr.js";
 import { ARP_EXCLUDED_SUBNETS, OVERLAY_SUBNET_LIST } from "../config.js";
 import { initWebSession, isWebClientEnabled, fetchRoutes, fetchNdNeighbours, extractIfaceName, extractNextHop, stripHtml } from "../librenms/web-client.js";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsLocation, LnmsAlert, LnmsLink, LnmsArpEntry, LnmsNdEntry } from "../librenms/types.js";
-import type { ArpLink, ArpDiscoveredDevice, DeviceRoute, AssetEvent, TopologyResponse, Site, DeviceSummary, NeighborLink } from "@librenms-dash/shared";
+import type { ArpLink, DeviceRoute, AssetEvent, TopologyResponse, Site, DeviceSummary, NeighborLink } from "@librenms-dash/shared";
+import { arpDeviceRegistry } from "./arpDeviceRegistry.js";
+import type { ArpDeviceFields } from "./arpDeviceRegistry.js";
 
 const STAGGER_MS = 200;
 
@@ -186,7 +188,13 @@ export function buildAndCacheTopology(): void {
     return (fromDevice.location || "Unknown") === (toDevice.location || "Unknown");
   });
 
-  const arpDevices = cache.get<ArpDiscoveredDevice[]>("arpDevices") ?? [];
+  const arpDevices = arpDeviceRegistry.publish();
+
+  const currArpDevices = new Set(arpDevices.map(d => {
+    const mac = d.mac.replace(/(.{2})(?=.)/g, "$1:");
+    return `${mac} at ${d.location}`;
+  }));
+  prevAssets.arpDevices = diffAndLog("discovered-device", prevAssets.arpDevices, currArpDevices);
 
   const payload: TopologyResponse = {
     sites: [...siteMap.values()],
@@ -407,6 +415,10 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
   // Active device IDs — used to restrict which devices can be "seenBy" sources
   const activeDeviceIds = new Set(devices.map((d) => d.device_id));
+  // Enabled devices that are currently down — their LibreNMS ARP cache may be
+  // stale (from before they went down), so entries sourced from them are kept
+  // but flagged via sourceDown rather than treated as fresh sightings.
+  const downDeviceIds = new Set(devices.filter((d) => d.status !== 1).map((d) => d.device_id));
 
   // Map each port_id to its interface name (from the per-device port cache) so
   // ARP links/devices can report which interface a device learned a peer on.
@@ -531,6 +543,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
           fromMac: fromMac ?? entry.mac_address,
           toInterface: ifName || undefined,
           toMac,
+          sourceDown: downDeviceIds.has(entry.device_id),
         });
       }
     } catch {
@@ -580,6 +593,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
       fromMac: mac,
       toInterface: ifName || undefined,
       toMac,
+      sourceDown: downDeviceIds.has(entry.device_id),
     });
   }
 
@@ -629,7 +643,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
 
   // --- Consolidation: union-find to merge MACs sharing an IP and IPs sharing a MAC ---
-  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, portIdToMac, portIdToIp, activeDeviceIds);
+  const arpDevices = consolidateArpDevices(allArpEntries, managedIpsByLocation, managedMacsByLocation, deviceIdToHostname, hostnameToLocation, isOverlayIp, portIdToIfName, portIdToMac, portIdToIp, activeDeviceIds, downDeviceIds);
 
   // Discover LAN IPs for managed devices from ARP entries where a device's
   // interface MAC is seen at a non-overlay, non-docker IP. This catches devices
@@ -648,28 +662,17 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   }
   cache.set("arpLanIps", arpLanIps, TTL.PORTS);
 
-  // Preserve ND-only discovered devices (IPv6-only IPs) that pollNdNeighbours added.
-  // pollArpLinks can't see them — they have no ARP (IPv4) presence — so without this
-  // they get erased every cycle when we overwrite "arpDevices".
-  const prevArpDevices = cache.get<ArpDiscoveredDevice[]>("arpDevices") ?? [];
-  const consolidatedMacs = new Set(arpDevices.map(d => d.mac));
-  const ndOnlyPrev = prevArpDevices.filter(
-    d => !consolidatedMacs.has(d.mac) && d.ips.every(ip => ip.includes(":")),
-  );
-  const finalArpDevices = ndOnlyPrev.length > 0 ? [...arpDevices, ...ndOnlyPrev] : arpDevices;
+  for (const device of arpDevices) {
+    arpDeviceRegistry.upsert(device);
+  }
 
   cache.set("arpLinks", arpLinks, TTL.PORTS);
-  cache.set("arpDevices", finalArpDevices, TTL.PORTS);
-  console.log(`[poller] Cached ${arpLinks.length} ARP links, ${finalArpDevices.length} discovered devices (${arpDevices.length} ARP + ${ndOnlyPrev.length} ND-only), ${arpLanIps.size} ARP-discovered LAN IPs from ${allArpEntries.length} ARP entries`);
+  console.log(`[poller] ARP: upserted ${arpDevices.length} discovered devices, ${arpLinks.length} links, ${arpLanIps.size} LAN IPs from ${allArpEntries.length} ARP entries`);
 
-  const currArpDevices = new Set(finalArpDevices.map(d => {
-    const mac = d.mac.replace(/(.{2})(?=.)/g, "$1:");
-    return `${mac} at ${d.location}`;
-  }));
-  prevAssets.arpDevices = diffAndLog("discovered-device", prevAssets.arpDevices, currArpDevices);
-  // Always trigger a rebuild — on the first run diffAndLog skips the baseline check
-  // and never sets topologyChangedInCycle, so flushTopologyChanged() would be a no-op,
-  // leaving the topology with the stale arpLinks:[] that pollNdNeighbours wrote.
+  // Always trigger a rebuild — on the first run diffAndLog (inside buildAndCacheTopology)
+  // skips the baseline check and never sets topologyChangedInCycle, so
+  // flushTopologyChanged() would be a no-op, leaving the topology with the stale
+  // arpLinks:[] that pollNdNeighbours wrote.
   topologyChangedInCycle = true;
   flushTopologyChanged();
 }
@@ -685,7 +688,8 @@ function consolidateArpDevices(
   portIdToMac: Map<number, string>,
   portIdToIp: Map<number, string>,
   activeDeviceIds: Set<number>,
-): ArpDiscoveredDevice[] {
+  downDeviceIds: Set<number>,
+): ArpDeviceFields[] {
   // Phase 1: collect valid (mac, ip) pairs, grouped by location.
   // Scoping by location prevents cross-site merging from swallowing devices.
   const pairsByLocation = new Map<string, Array<{ mac: string; ip: string; deviceId: number; portId: number }>>();
@@ -729,7 +733,7 @@ function consolidateArpDevices(
   }
 
   // Phase 2–4: run union-find per location so deduplication stays within a site
-  const arpDevices: ArpDiscoveredDevice[] = [];
+  const arpDevices: ArpDeviceFields[] = [];
 
   for (const [location, pairs] of pairsByLocation) {
     const siteId = location.toLowerCase().replace(/[^a-z0-9]+/g, "-");
@@ -764,16 +768,17 @@ function consolidateArpDevices(
     }
 
     // Group pairs by component
-    const components = new Map<string, { macs: Set<string>; ips: Set<string>; deviceId: number; portId: number }>();
+    const components = new Map<string, { macs: Set<string>; ips: Set<string>; deviceId: number; portId: number; deviceIds: Set<number> }>();
     for (const p of pairs) {
       const root = find(`mac:${p.mac}`);
       let comp = components.get(root);
       if (!comp) {
-        comp = { macs: new Set(), ips: new Set(), deviceId: p.deviceId, portId: p.portId };
+        comp = { macs: new Set(), ips: new Set(), deviceId: p.deviceId, portId: p.portId, deviceIds: new Set() };
         components.set(root, comp);
       }
       comp.macs.add(p.mac);
       comp.ips.add(p.ip);
+      comp.deviceIds.add(p.deviceId);
     }
 
     // Build output — one entry per component per location
@@ -802,6 +807,10 @@ function consolidateArpDevices(
         return 0;
       });
 
+      // A device seen by at least one currently-up source is never flagged
+      // sourceDown, even if other contributing sources are down.
+      const sourceDown = [...comp.deviceIds].every((id) => downDeviceIds.has(id));
+
       arpDevices.push({
         mac: bestMac,
         macs: macArr,
@@ -813,6 +822,7 @@ function consolidateArpDevices(
         seenByInterface: portIdToIfName.get(comp.portId),
         seenByIp: portIdToIp.get(comp.portId),
         seenByMac: portIdToMac.get(comp.portId),
+        sourceDown,
       });
     }
   }
@@ -893,13 +903,26 @@ export async function pollNdNeighbours() {
   const devices = cache.get<LnmsDevice[]>("devices");
   if (!devices) return;
 
-  // Build mac → hostname map from cached port data
+  // Build mac → hostname map from cached port data. Falls back to a live fetch
+  // when the ports cache entry has expired (TTL.PORTS matches this job's own
+  // poll interval, so a device processed early in pollPortsAndIps's cycle can
+  // otherwise race past expiry right before this runs) — without this, a
+  // managed device's interface MAC would be silently excluded from this map
+  // and wrongly get inserted into the discovered-device registry as unmanaged.
   const macToHostname = new Map<string, string>();
   const hostnameToLocation = new Map<string, string>();
   for (const d of devices) {
     hostnameToLocation.set(d.hostname, d.location || "Unknown");
-    const ports = cache.get<LnmsPort[]>(`ports:${d.hostname}`);
-    if (!ports) continue;
+    let ports: Array<{ ifPhysAddress?: string }> | undefined = cache.get<LnmsPort[]>(`ports:${d.hostname}`) ?? undefined;
+    if (!ports) {
+      try {
+        const res = await librenmsGet<{ ports: Array<{ ifPhysAddress?: string }> }>(`/devices/${d.hostname}/ports`, { columns: "port_id,ifPhysAddress" });
+        ports = res.ports ?? [];
+      } catch {
+        continue;
+      }
+      await delay(50);
+    }
     for (const p of ports) {
       const mac = normalizeMac(p.ifPhysAddress ?? "");
       if (mac && mac.length === 12 && mac !== "000000000000") macToHostname.set(mac, d.hostname);
@@ -954,23 +977,24 @@ export async function pollNdNeighbours() {
 
   cache.set("ndGlobalIpv6", ndGlobalIpv6, TTL.PORTS);
 
-  // Merge ND-only unmanaged devices into existing arpDevices
-  const existingArpDevices = cache.get<ArpDiscoveredDevice[]>("arpDevices") ?? [];
-  const macToArpDevice = new Map(existingArpDevices.map((d) => [normalizeMac(d.mac), d]));
-
-  const ndOnlyDevices: ArpDiscoveredDevice[] = [];
+  // Merge ND-only unmanaged devices into the registry
+  let ndOnlyNewCount = 0;
+  let ndEnrichedCount = 0;
   for (const [mac, info] of ndUnmanaged) {
-    const existing = macToArpDevice.get(mac);
+    const existing = arpDeviceRegistry.get(mac);
     if (existing) {
-      // Enrich existing ARP entry with IPv6 addresses
+      // Enrich existing ARP-sourced record with IPv6 addresses
       const ipSet = new Set(existing.ips);
+      const mergedIps = [...existing.ips];
       for (const ip of info.ips) {
-        if (!ipSet.has(ip)) { existing.ips.push(ip); ipSet.add(ip); }
+        if (!ipSet.has(ip)) { mergedIps.push(ip); ipSet.add(ip); }
       }
+      arpDeviceRegistry.upsert({ ...existing, ips: mergedIps });
+      ndEnrichedCount++;
       continue;
     }
     const siteId = info.location.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-    ndOnlyDevices.push({
+    arpDeviceRegistry.upsert({
       mac,
       macs: [mac],
       ips: [...info.ips],
@@ -981,14 +1005,12 @@ export async function pollNdNeighbours() {
       seenByInterface: info.seenByPort,
       seenByIp: undefined,
       seenByMac: undefined,
+      sourceDown: false,
     });
+    ndOnlyNewCount++;
   }
 
-  if (ndOnlyDevices.length > 0) {
-    cache.set("arpDevices", [...existingArpDevices, ...ndOnlyDevices], TTL.PORTS);
-  }
-
-  console.log(`[poller] ND: ${totalEntries} entries scanned, ${ndGlobalIpv6.size} managed devices enriched, ${ndOnlyDevices.length} ND-only unmanaged devices`);
+  console.log(`[poller] ND: ${totalEntries} entries scanned, ${ndGlobalIpv6.size} managed devices enriched, ${ndOnlyNewCount} new ND-only devices, ${ndEnrichedCount} existing devices enriched with IPv6`);
   buildAndCacheTopology();
 }
 

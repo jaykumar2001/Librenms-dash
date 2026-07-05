@@ -4,13 +4,15 @@ This document describes how the backend resolves, deduplicates, and correlates m
 
 ## Overview
 
-The pipeline runs inside `pollArpLinks` (called from `pollPortsAndIps`) and `consolidateArpDevices`. It produces three outputs cached for the topology response:
+The pipeline runs inside `pollArpLinks` (called from `pollPortsAndIps`), `pollNdNeighbours`, and `consolidateArpDevices`. It produces three outputs for the topology response:
 
-| Cache key       | Type                    | Contents                                              |
-|-----------------|-------------------------|-------------------------------------------------------|
-| `arpLinks`      | `ArpLink[]`             | Peer relationships between two managed devices        |
-| `arpDevices`    | `ArpDiscoveredDevice[]` | Consolidated unmanaged devices seen in ARP tables     |
-| `arpLanIps`     | `Map<string, string>`   | LAN IP override for managed devices polled via overlay |
+| Output          | Type                    | Storage                                    | Contents                                              |
+|-----------------|-------------------------|---------------------------------------------|--------------------------------------------------------|
+| `arpLinks`      | `ArpLink[]`             | `cache.set("arpLinks", ...)`, 5-min TTL     | Peer relationships between two managed devices        |
+| `arpDevices`    | `ArpDiscoveredDevice[]` | `ArpDeviceRegistry` (in-memory Map, keyed by MAC, no TTL expiry — see Stage 5) | Consolidated unmanaged devices seen in ARP/ND, with `firstSeen`/`lastSeen`/`stale` |
+| `arpLanIps`     | `Map<string, string>`   | `cache.set("arpLanIps", ...)`, 5-min TTL    | LAN IP override for managed devices polled via overlay |
+
+`arpDevices` is **not** a plain TTL-cached key (unlike the other two) — as of 2026-07-03 it's backed by `ArpDeviceRegistry` (`backend/src/jobs/arpDeviceRegistry.ts`), which persists devices by MAC across poll cycles instead of being rebuilt from scratch each time. See Stage 5.
 
 ---
 
@@ -156,6 +158,23 @@ Managed devices polled exclusively via overlay (VPN) may have no usable LAN IP i
 
 ---
 
+## Stage 5 — Staleness & Retention
+
+**File:** `backend/src/jobs/arpDeviceRegistry.ts`, wired into `pollArpLinks` / `pollNdNeighbours` / `buildAndCacheTopology` in `poller.ts`
+
+A discovered device is no longer dropped the instant it misses a single poll cycle (e.g. a device that's briefly powered off). `ArpDeviceRegistry` is a persistent `Map<mac, record>`:
+
+- **`upsert(fields, now)`** — called once per matching device on every `pollArpLinks` and `pollNdNeighbours` run. Preserves `firstSeen` from the prior record if one exists; always advances `lastSeen` to `now`; replaces all other fields with the current snapshot (ARP is authoritative when both ARP and ND see the same MAC in the same cycle — ND enrichment only adds IPv6 addresses to an existing ARP-sourced record, via `get()` + spread, never wholesale-replaces it).
+- **`publish(now)`** — called from `buildAndCacheTopology()` every cycle. For each record: if `now - lastSeen > 24h` (`RETENTION_MS`), delete it and omit from the result. Otherwise emit it with `stale: now - lastSeen > 15min` (`STALE_THRESHOLD_MS`) and `firstSeen`/`lastSeen` converted to ISO 8601 strings.
+
+15 minutes is 3× the 5-minute poll cadence (see the topology-dataflow project memory / `DEVICE_POLL_MS`/`TTL.PORTS` in `poller.ts`) — long enough that a device isn't flagged stale just from ordinary poll timing jitter.
+
+**Frontend:** a `stale` device's node dims (`ArpDeviceNode.tsx`) but stays fully interactive on hover; its tooltip (`LinkTooltip.tsx`) shows a "Last seen" row only while stale.
+
+**Add/remove notifications:** the `discovered-device` asset-change diff (which drives the toast notifications in `AssetEventToast.tsx`) is computed inside `buildAndCacheTopology()`, against the registry's *post-eviction* published array — not inside `pollArpLinks` against its own per-cycle snapshot. This means: a brand-new MAC fires "added" once; a device going stale fires nothing (it's still in the published array, just dimmed); only actual 24h eviction fires "removed".
+
+---
+
 ## LLDP/CDP Neighbor Link Deduplication
 
 **File:** `backend/src/routes/topology.ts:104–131`
@@ -201,11 +220,22 @@ LibreNMS API
                                           │  Phase 2: union-find per location   │
                                           │  Phase 3: group by component        │
                                           │  Phase 4: pick best MAC             │
-                                          │  → arpDevices[]                     │
+                                          │  → ArpDeviceRegistry.upsert() per   │
+                                          │    device (ARP path); ND path also  │
+                                          │    upserts/enriches the same        │
+                                          │    registry from pollNdNeighbours   │
                                           └─────────────────┬──────────────────┘
                                                             │
                                           ┌─────────────────▼──────────────────┐
                                           │  Stage 4: ARP LAN IP discovery      │
                                           │  → arpLanIps (Map<hostname, ip>)    │
+                                          └─────────────────┬──────────────────┘
+                                                            │
+                                          ┌─────────────────▼──────────────────┐
+                                          │  Stage 5: buildAndCacheTopology()   │
+                                          │  → ArpDeviceRegistry.publish():     │
+                                          │    evict if lastSeen > 24h,         │
+                                          │    stale if lastSeen > 15min        │
+                                          │  → arpDevices[] in TopologyResponse │
                                           └────────────────────────────────────┘
 ```

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { cache, TTL } from "../cache/store.js";
 import { librenmsGet } from "../librenms/client.js";
 import { findDeviceIps, getOverlayPortSummaries, engine } from "../librenms/overlays.js";
+import { lookupVendor } from "../librenms/oui.js";
 import type { DeviceOverview, DeviceInterface, DeviceRoute } from "@librenms-dash/shared";
 import type { LnmsDevice, LnmsPort, LnmsDeviceIp, LnmsAlert, LnmsHealthSensor } from "../librenms/types.js";
 
@@ -69,6 +70,7 @@ app.get("/:hostname/overview", async (c) => {
     .map((p) => ({
       ifName: p.ifName || p.ifDescr,
       mac: formatMac(p.ifPhysAddress ?? ""),
+      vendor: lookupVendor(p.ifPhysAddress ?? ""),
       ifOperStatus: p.ifOperStatus,
       ips: ipsByPort.get(p.port_id) ?? [],
     }))

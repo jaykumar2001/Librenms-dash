@@ -147,6 +147,10 @@ export interface ArpLink {
   fromMac?: string;
   toInterface?: string;
   toMac?: string;
+  // True when the managed device that reported this ARP sighting (toHostname)
+  // is currently down (enabled in LibreNMS but unreachable) — its ARP table
+  // may be a stale cache from before it went down.
+  sourceDown: boolean;
 }
 
 export interface ArpDiscoveredDevice {
@@ -160,6 +164,13 @@ export interface ArpDiscoveredDevice {
   seenByInterface?: string;
   seenByIp?: string;
   seenByMac?: string;
+  firstSeen: string; // ISO 8601
+  lastSeen: string;  // ISO 8601
+  stale: boolean;
+  // True when every managed device that currently sources this discovered
+  // device is down. A device seen by at least one up source is never marked
+  // sourceDown, even if other sources are down.
+  sourceDown: boolean;
 }
 
 export interface TopologyResponse {
@@ -176,6 +187,7 @@ export interface TopologyResponse {
 export interface DeviceInterface {
   ifName: string;
   mac: string;
+  vendor: string;
   ifOperStatus: string;
   ips: string[];
 }

@@ -44,6 +44,7 @@ The dashboard is now available at **`http://<your-host-ip>:3001`**.
 - Overlay links for ZeroTier, WireGuard, Tailscale, GRE, IPSec, Tinc, PPTP, Tunnel, and TAP (auto-detected by interface name)
 - LLDP/CDP neighbor links
 - ARP-derived links, filtered to same-location devices
+- Discovered (unmanaged) devices seen via ARP/ND, with staleness tracking — a device that stops responding dims for 15 minutes before being removed after 24 hours, instead of vanishing after a single missed poll
 - Per-device IPv4 routing tables (next-hop, destination, interface)
 - Device hover popovers with traffic and health graphs
 - Real-time asset change notifications via SSE (device/port/IP added or removed)
@@ -194,6 +195,7 @@ When a device moves, its category underlay and connected links update. When a si
 
 - ARP links are filtered so devices in different LibreNMS locations do not form a link.
 - The backend caches LibreNMS data in memory with TTL-based refreshes. The device list (status, uptime, `last_polled`) is refreshed every 5 minutes; ports and alerts on their own intervals.
+- Discovered (ARP/ND) devices are tracked separately in an in-memory registry keyed by MAC, not a simple TTL cache — see [`docs/arp-deduplication-and-correlation.md`](docs/arp-deduplication-and-correlation.md#stage-5--staleness--retention) for how staleness and 24-hour retention work.
 - The production build bundles the frontend into `frontend/dist` and serves it from the backend process.
 
 ## Security

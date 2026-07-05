@@ -24,6 +24,8 @@ export function ArpDeviceNode({ node, highlighted, searchMatch, onMouseEnter, on
   const ipTrunc = ip0.length > 20 ? ip0.slice(0, 19) + "…" : ip0;
   const ipDisplay = node.ips.length > 1 ? `${ipTrunc} +${node.ips.length - 1}` : ipTrunc;
   const active = isHovered || highlighted || searchMatch;
+  const dimmed = node.stale && !active;
+  const accentColor = searchMatch ? "#facc15" : node.sourceDown ? "#f87171" : "#fbbf24";
 
   const handleEnter = useCallback((e: React.MouseEvent) => {
     setIsHovered(true);
@@ -63,17 +65,17 @@ export function ArpDeviceNode({ node, highlighted, searchMatch, onMouseEnter, on
         height={BOX_H}
         rx={6}
         fill={active ? "#1e293b" : "#0f172a"}
-        fillOpacity={searchMatch ? 0.95 : isHovered ? 0.88 : highlighted ? 0.8 : 0.65}
-        stroke={searchMatch ? "#facc15" : "#fbbf24"}
+        fillOpacity={searchMatch ? 0.95 : isHovered ? 0.88 : highlighted ? 0.8 : dimmed ? 0.3 : 0.65}
+        stroke={accentColor}
         strokeWidth={searchMatch ? 2.5 : active ? 1.5 : 1}
-        strokeOpacity={active ? 0.8 : 0.4}
+        strokeOpacity={active ? 0.8 : dimmed ? 0.2 : 0.4}
         className={searchMatch ? "search-match-box" : undefined}
       />
       {/* Vendor */}
       <text
         x={x + 5}
         y={y + 12}
-        fill={searchMatch ? "#facc15" : "#fbbf24"}
+        fill={accentColor}
         fillOpacity={0.9}
         fontSize={searchMatch ? 9.5 : 8.5}
         fontWeight={searchMatch ? 700 : 600}

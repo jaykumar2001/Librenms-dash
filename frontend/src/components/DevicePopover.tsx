@@ -27,7 +27,7 @@ function formatUptime(seconds: number): string {
   return `${h}h ${m}m`;
 }
 
-function formatTimestamp(ts: string): string {
+export function formatTimestamp(ts: string): string {
   if (!ts) return "—";
   const d = new Date(ts.replace(" ", "T"));
   if (isNaN(d.getTime())) return ts;
@@ -283,6 +283,9 @@ function DevicePopoverInner({ hostname, icon, screenX, screenY, bottomSheet, onM
                       </td>
                       <td className="py-0.5 px-2 font-mono text-gray-400">
                         <Copyable text={iface.mac} block>{iface.mac}</Copyable>
+                        {iface.vendor && (
+                          <div className="text-[10px] text-cyan-400 leading-tight truncate">{iface.vendor}</div>
+                        )}
                       </td>
                       <td className="py-0.5 px-2 font-mono text-gray-300 overflow-hidden">
                         {(() => {
