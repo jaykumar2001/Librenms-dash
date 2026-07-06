@@ -13,6 +13,8 @@
 
 **LibreNMS-Dash** is a LibreNMS-backed network dashboard. It aggregates devices, sites, overlays, alerts, and graphs into a single topology view with live hover details and SVG-based layout controls.
 
+Demo Site: https://librenms-dash.github.io/
+
 ## Getting Started
 
 > **Prerequisites:** [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/install/) — no other local dependencies required.
