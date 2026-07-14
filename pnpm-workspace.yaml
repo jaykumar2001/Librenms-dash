@@ -2,3 +2,7 @@ packages:
   - backend
   - frontend
   - shared
+
+onlyBuiltDependencies:
+  - "@swc/core"
+  - esbuild
