@@ -677,7 +677,7 @@ async function pollArpLinks(devices: LnmsDevice[], allIps: Map<string, LnmsDevic
   flushTopologyChanged();
 }
 
-function consolidateArpDevices(
+export function consolidateArpDevices(
   allArpEntries: LnmsArpEntry[],
   managedIpsByLocation: Map<string, Set<string>>,
   managedMacsByLocation: Map<string, Set<string>>,
@@ -720,7 +720,10 @@ function consolidateArpDevices(
     const locMacs = managedMacsByLocation.get(location);
     if (locIps?.has(ip) || locMacs?.has(mac)) continue;
 
-    const pairKey = `${location}:${mac}:${ip}`;
+    // Deduplicate per source device, not per (mac, ip): the same MAC+IP is
+    // normally seen by every router/switch on the segment, and each of those
+    // sources is needed below to decide sourceDown and pick an attribution.
+    const pairKey = `${location}:${mac}:${ip}:${entry.device_id}`;
     if (seen.has(pairKey)) continue;
     seen.add(pairKey);
 
@@ -775,6 +778,12 @@ function consolidateArpDevices(
       if (!comp) {
         comp = { macs: new Set(), ips: new Set(), deviceId: p.deviceId, portId: p.portId, deviceIds: new Set() };
         components.set(root, comp);
+      } else if (downDeviceIds.has(comp.deviceId) && !downDeviceIds.has(p.deviceId)) {
+        // Attribute the sighting to a source that is currently up. ARP entry
+        // order is arbitrary, so the first source can be a down device whose
+        // LibreNMS ARP cache is stale from before it went down.
+        comp.deviceId = p.deviceId;
+        comp.portId = p.portId;
       }
       comp.macs.add(p.mac);
       comp.ips.add(p.ip);

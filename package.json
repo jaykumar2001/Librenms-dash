@@ -4,9 +4,6 @@
   "license": "GPL-3.0-or-later",
   "private": true,
   "type": "module",
-  "pnpm": {
-    "onlyBuiltDependencies": ["@swc/core", "esbuild"]
-  },
   "packageManager": "pnpm@10.30.2",
   "scripts": {
     "dev": "pnpm --filter backend dev & pnpm --filter frontend dev",
