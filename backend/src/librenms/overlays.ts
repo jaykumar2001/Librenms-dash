@@ -14,8 +14,9 @@ export const engine = new OverlayEngine({
 export function buildOverlayLinks(
   devicePorts: Map<string, LnmsPort[]>,
   deviceIps: Map<string, LnmsDeviceIp[]>,
+  connectingIps?: Map<string, string>,
 ): SubnetGroup[] {
-  return engine.process(devicePorts, deviceIps);
+  return engine.process(devicePorts, deviceIps, connectingIps);
 }
 
 export function getOverlayPortSummaries(

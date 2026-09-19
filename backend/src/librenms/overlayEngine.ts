@@ -87,8 +87,9 @@ export class OverlayEngine {
   process(
     devicePorts: Map<string, LnmsPort[]>,
     deviceIps: Map<string, LnmsDeviceIp[]>,
+    connectingIps?: Map<string, string>,
   ): SubnetGroup[] {
-    const members = this.discover(devicePorts, deviceIps);
+    const members = this.discover(devicePorts, deviceIps, connectingIps);
     const groups = this.groupBySubnet(members);
     const linked = this.buildLinks(groups);
     return linked.filter((g) => g.links.length > 0);
@@ -97,6 +98,7 @@ export class OverlayEngine {
   discover(
     devicePorts: Map<string, LnmsPort[]>,
     deviceIps: Map<string, LnmsDeviceIp[]>,
+    connectingIps?: Map<string, string>,
   ): OverlayMember[] {
     const members: OverlayMember[] = [];
     const seen = new Set<string>();
@@ -214,6 +216,45 @@ export class OverlayEngine {
               ifOperStatus: matchingPort?.ifOperStatus ?? "up",
             });
           }
+        }
+      }
+    }
+
+    // --- Pass 3: connecting-IP fallback ---
+    // For any device whose polling IP falls in a known overlay subnet but has
+    // no membership for that specific (type, subnet) yet, synthesize a member.
+    // We intentionally do NOT skip devices that already have OTHER overlay
+    // memberships (e.g. a PPTP port), because a device can be on multiple
+    // overlays and only some interfaces may be visible via LibreNMS port data.
+    // Deduplication is handled entirely by the per-(hostname, type, subnet)
+    // seen key — the same guard used by Passes 1 and 2.
+    if (connectingIps) {
+      for (const [hostname, connectingIp] of connectingIps) {
+        if (!connectingIp) continue;
+
+        for (const entry of this.knownSubnets) {
+          const colonIdx = entry.indexOf(":");
+          const type = entry.slice(0, colonIdx);
+          const subnet = entry.slice(colonIdx + 1);
+
+          if (!makeCidrMatcher([subnet])(connectingIp)) continue;
+
+          const key = `${hostname}:${type}:${subnet}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+
+          const prefixLen = parseInt(subnet.split("/")[1] ?? "24", 10);
+          members.push({
+            hostname,
+            ifName: "(via device IP)",
+            ip: connectingIp,
+            prefixLen,
+            subnet,
+            overlayType: type,
+            ifInOctets_rate: 0,
+            ifOutOctets_rate: 0,
+            ifOperStatus: "up",
+          });
         }
       }
     }

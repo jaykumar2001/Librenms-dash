@@ -356,7 +356,11 @@ export async function pollPortsAndIps() {
     await delay(STAGGER_MS);
   }
 
-  const overlays = buildOverlayLinks(allPorts, allIps);
+  const connectingIps = new Map<string, string>();
+  for (const device of devices) {
+    if (device.status === 1 && device.ip) connectingIps.set(device.hostname, device.ip);
+  }
+  const overlays = buildOverlayLinks(allPorts, allIps, connectingIps);
   cache.set("overlays", overlays, TTL.PORTS);
   console.log(`[poller] Cached overlays: ${overlays.map((o) => `${o.overlayType}(${o.links.length} links)`).join(", ")}`);
 
