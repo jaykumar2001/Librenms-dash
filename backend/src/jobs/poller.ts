@@ -1042,6 +1042,13 @@ export async function pollAlerts() {
       }
     }
     if (changed) {
+      // Refresh device statuses before rebuilding so the topology reflects
+      // current up/down state alongside the new alert data. Without this,
+      // a device-down alert triggers a rebuild but the devices cache still
+      // shows status=1 (stale from the last pollDevicesAndLocations run).
+      await pollDevicesAndLocations();
+      // Ensure a rebuild happens even if no device status changed (e.g.
+      // port alerts), since pollDevicesAndLocations only rebuilds on changes.
       topologyChangedInCycle = true;
       flushTopologyChanged();
     }
