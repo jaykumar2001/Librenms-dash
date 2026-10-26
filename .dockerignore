@@ -8,3 +8,10 @@ dist
 .git
 docs
 CLAUDE.md
+
+# Sensitive local configuration
+.env.*
+!.env.example
+secrets/
+**/secrets/
+.pnpm-store/

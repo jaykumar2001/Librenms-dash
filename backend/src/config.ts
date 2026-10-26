@@ -1,15 +1,17 @@
 import { config } from "dotenv";
 import { resolve } from "path";
+import { readSecret } from "./secrets.js";
 
 config({ path: resolve(import.meta.dirname, "../../.env") });
 
 export const LIBRENMS_URL = process.env.LIBRENMS_URL ?? "https://librenms.local.lan";
-export const LIBRENMS_TOKEN = process.env.LIBRENMS_TOKEN ?? "";
+export const LIBRENMS_TOKEN = readSecret("LIBRENMS_TOKEN");
 export const LIBRENMS_USER = process.env.LIBRENMS_USER ?? "";
-export const LIBRENMS_PASS = process.env.LIBRENMS_PASS ?? "";
+export const LIBRENMS_PASS = readSecret("LIBRENMS_PASS");
 export const PORT = Number(process.env.PORT ?? 3001);
 export const AUTH_USERNAME = process.env.AUTH_USERNAME ?? "";
 export const AUTH_PASSWORD = process.env.AUTH_PASSWORD ?? "";
+export const AUTH_PASSWORD_HASH = readSecret("AUTH_PASSWORD_HASH");
 
 function parseSubnetList(env: string | undefined, fallback: string[] = []): string[] {
   if (!env) return fallback;
@@ -66,9 +68,21 @@ if (LIBRENMS_URL.startsWith("https://")) {
 }
 
 if (!LIBRENMS_TOKEN) {
-  throw new Error("LIBRENMS_TOKEN is required in .env");
+  throw new Error("LIBRENMS_TOKEN or LIBRENMS_TOKEN_FILE is required");
 }
 
-if (!AUTH_USERNAME || !AUTH_PASSWORD) {
-  throw new Error("AUTH_USERNAME and AUTH_PASSWORD are required in .env");
+if (!AUTH_USERNAME || (!AUTH_PASSWORD && !AUTH_PASSWORD_HASH)) {
+  throw new Error(
+    "AUTH_USERNAME and either AUTH_PASSWORD or AUTH_PASSWORD_HASH are required"
+  );
+}
+
+if (AUTH_PASSWORD && AUTH_PASSWORD_HASH) {
+  throw new Error(
+    "Configure AUTH_PASSWORD or AUTH_PASSWORD_HASH, not both"
+  );
+}
+
+if (AUTH_PASSWORD_HASH && !AUTH_PASSWORD_HASH.startsWith("$argon2id$")) {
+  throw new Error("AUTH_PASSWORD_HASH must contain an Argon2id hash");
 }

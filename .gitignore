@@ -29,3 +29,11 @@ shared/types.d.ts
 # Independent git repo for the public GitHub Pages demo site — nested here for
 # tooling convenience only, tracked entirely by its own repo, not this one.
 /librenms-dash.github.io/
+
+.pnpm-store/
+
+# Local credentials and secret files
+.env
+.env.*
+!.env.example
+secrets/

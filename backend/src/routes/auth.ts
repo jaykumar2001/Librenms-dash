@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { AUTH_PASSWORD, AUTH_USERNAME } from "../config.js";
+import { AUTH_PASSWORD, AUTH_PASSWORD_HASH, AUTH_USERNAME } from "../config.js";
+import { verifyPassword } from "../auth/password.js";
 import { createSession, destroySession, isValidSession, SESSION_COOKIE } from "../auth/sessions.js";
 
 const app = new Hono();
@@ -29,7 +30,20 @@ app.post("/login", async (c) => {
   }
 
   const { username, password } = body;
-  if (username !== AUTH_USERNAME || password !== AUTH_PASSWORD) {
+  if (
+    typeof username !== "string" ||
+    typeof password !== "string"
+  ) {
+    return c.json({ error: "Invalid username or password" }, 401);
+  }
+
+  const passwordValid = await verifyPassword(
+    password,
+    AUTH_PASSWORD_HASH,
+    AUTH_PASSWORD,
+  );
+
+  if (!passwordValid || username !== AUTH_USERNAME) {
     return c.json({ error: "Invalid username or password" }, 401);
   }
 
