@@ -22,6 +22,10 @@ export interface LinkTooltipData {
   targetMac?: string;
   // Overlay
   overlayType?: string;
+  sourceTxBps?: number;
+  sourceRxBps?: number;
+  targetTxBps?: number;
+  targetRxBps?: number;
   // Per-endpoint interface (LLDP ports, overlay/ARP interfaces)
   sourceInterface?: string;
   targetInterface?: string;
@@ -125,6 +129,8 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
               iface={data.sourceInterface}
               ip={data.sourceIp}
               ipLabel={data.type === "overlay" ? "Overlay IP" : "IP"}
+              txBps={data.sourceTxBps}
+              rxBps={data.sourceRxBps}
             />
             <DeviceSection
               role="Destination"
@@ -132,6 +138,8 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
               iface={data.targetInterface}
               ip={data.targetIp}
               ipLabel={data.type === "overlay" ? "Overlay IP" : "IP"}
+              txBps={data.targetTxBps}
+              rxBps={data.targetRxBps}
             />
           </tbody>
         </table>
@@ -140,13 +148,22 @@ export function LinkTooltip({ data, onMouseEnter, onMouseLeave }: Props) {
   );
 }
 
-function DeviceSection({ role, device, iface, ip, ipLabel = "IP", mac }: {
+function formatBps(bps: number): string {
+  if (bps >= 1e9) return `${(bps / 1e9).toFixed(2)} Gbps`;
+  if (bps >= 1e6) return `${(bps / 1e6).toFixed(2)} Mbps`;
+  if (bps >= 1e3) return `${(bps / 1e3).toFixed(1)} Kbps`;
+  return `${Math.round(bps)} bps`;
+}
+
+function DeviceSection({ role, device, iface, ip, ipLabel = "IP", mac, txBps, rxBps }: {
   role: string;
   device: string;
   iface?: string;
   ip?: string;
   ipLabel?: string;
   mac?: string;
+  txBps?: number;
+  rxBps?: number;
 }) {
   return (
     <>
@@ -155,6 +172,8 @@ function DeviceSection({ role, device, iface, ip, ipLabel = "IP", mac }: {
       {iface && <Row label="Interface" value={iface} mono />}
       {ip && <Row label={ipLabel} value={ip} mono copyable />}
       {mac && <Row label="MAC" value={mac} mono copyable />}
+      {txBps != null && <Row label="Tx" value={txBps > 0 ? formatBps(txBps) : "—"} mono />}
+      {rxBps != null && <Row label="Rx" value={rxBps > 0 ? formatBps(rxBps) : "—"} mono />}
     </>
   );
 }

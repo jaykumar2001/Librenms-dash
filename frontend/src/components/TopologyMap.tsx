@@ -12,6 +12,7 @@ import { ArpDeviceNode } from "./ArpDeviceNode";
 import { DevicePopover } from "./DevicePopover";
 import { LinkTooltip, type LinkTooltipData } from "./LinkTooltip";
 import { curvedLinkPath, pointToPointPath, computeDominantSide, DEVICE_HALF, ARP_HALF, type Side } from "@/lib/linkGeometry";
+import { adjustHexLightness } from "@/lib/colorUtils";
 import { Logo } from "./Logo";
 import { AssetEventToast } from "./AssetEventToast";
 
@@ -356,6 +357,40 @@ export function TopologyMap({ data, sse }: Props) {
       }),
     [links, hiddenOverlays, overlayColorMap],
   );
+
+  // Per overlay link: traffic-adjusted color (HSL lightness 38–76%) and
+  // normalised intensity (0–1) for strokeWidth variation.
+  // L=38 keeps the line visible on the dark background even at zero traffic;
+  // log scale compresses the wide dynamic range of real-world rates.
+  const overlayTrafficMap = useMemo(() => {
+    const map = new Map<string, { color: string; intensity: number }>();
+    const rates = new Map<string, number>();
+    let maxBps = 0;
+    for (const link of visibleLinks) {
+      const key = `ol-${link.overlayType}-${link.source.hostname}-${link.target.hostname}`;
+      const srcDev = deviceMap.get(link.source.hostname);
+      const tgtDev = deviceMap.get(link.target.hostname);
+      const srcPort = srcDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType);
+      const tgtPort = tgtDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType);
+      const srcBps = (srcPort?.ifInOctets_rate ?? 0) + (srcPort?.ifOutOctets_rate ?? 0);
+      const tgtBps = (tgtPort?.ifInOctets_rate ?? 0) + (tgtPort?.ifOutOctets_rate ?? 0);
+      // Use min: if one side sees no traffic the link is effectively idle,
+      // regardless of what the other side's aggregate interface rate reports.
+      const bps = srcBps > 0 && tgtBps > 0 ? Math.min(srcBps, tgtBps) : 0;
+      rates.set(key, bps);
+      if (bps > maxBps) maxBps = bps;
+    }
+    for (const link of visibleLinks) {
+      const key = `ol-${link.overlayType}-${link.source.hostname}-${link.target.hostname}`;
+      const bps = rates.get(key) ?? 0;
+      const intensity = maxBps > 0 ? (Math.log1p(bps) / Math.log1p(maxBps)) ** 2 : 0;
+      map.set(key, {
+        color: adjustHexLightness(link.color, 12 + 69 * intensity),
+        intensity,
+      });
+    }
+    return map;
+  }, [visibleLinks, deviceMap]);
 
   // Pre-compute a single anchor side per device based on all its visible peers.
   const deviceSide = useMemo(() => {
@@ -1115,6 +1150,7 @@ export function TopologyMap({ data, sse }: Props) {
             const tgtOverlayIp = link.toIp
               || tgtDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType)?.ip
               || "";
+            const traffic = overlayTrafficMap.get(key);
             return (
               <OverlayLinkLine
                 key={key}
@@ -1123,21 +1159,31 @@ export function TopologyMap({ data, sse }: Props) {
                 highlighted={linked}
                 sourceSide={deviceSide.get(link.source.hostname)}
                 targetSide={deviceSide.get(link.target.hostname)}
-                onMouseEnter={(e) => showLinkTooltip(key, {
-                  type: "overlay",
-                  screenX: e.clientX,
-                  screenY: e.clientY,
-                  sourceHostname: link.source.hostname,
-                  targetHostname: link.target.hostname,
-                  sourceDisplayName: displayName(link.source.hostname),
-                  targetDisplayName: displayName(link.target.hostname),
-                  color: link.color,
-                  overlayType: link.overlayType,
-                  sourceIp: srcOverlayIp,
-                  targetIp: tgtOverlayIp,
-                  sourceInterface: link.fromIface,
-                  targetInterface: link.toIface,
-                })}
+                trafficColor={traffic?.color}
+                trafficIntensity={traffic?.intensity}
+                onMouseEnter={(e) => {
+                  const sp = srcDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType);
+                  const tp = tgtDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType);
+                  showLinkTooltip(key, {
+                    type: "overlay",
+                    screenX: e.clientX,
+                    screenY: e.clientY,
+                    sourceHostname: link.source.hostname,
+                    targetHostname: link.target.hostname,
+                    sourceDisplayName: displayName(link.source.hostname),
+                    targetDisplayName: displayName(link.target.hostname),
+                    color: link.color,
+                    overlayType: link.overlayType,
+                    sourceIp: srcOverlayIp,
+                    targetIp: tgtOverlayIp,
+                    sourceInterface: link.fromIface,
+                    targetInterface: link.toIface,
+                    sourceTxBps: sp ? sp.ifOutOctets_rate * 8 : undefined,
+                    sourceRxBps: sp ? sp.ifInOctets_rate * 8 : undefined,
+                    targetTxBps: tp ? tp.ifOutOctets_rate * 8 : undefined,
+                    targetRxBps: tp ? tp.ifInOctets_rate * 8 : undefined,
+                  });
+                }}
                 onMouseLeave={hideLinkTooltip}
               />
             );
