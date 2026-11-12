@@ -7,11 +7,13 @@ interface Props {
   highlighted?: boolean;
   sourceSide?: Side;
   targetSide?: Side;
+  trafficColor?: string;
+  trafficIntensity?: number;
   onMouseEnter: (e: React.MouseEvent) => void;
   onMouseLeave: () => void;
 }
 
-export function OverlayLinkLine({ link, hovered, highlighted, sourceSide, targetSide, onMouseEnter, onMouseLeave }: Props) {
+export function OverlayLinkLine({ link, hovered, highlighted, sourceSide, targetSide, trafficColor, trafficIntensity = 0, onMouseEnter, onMouseLeave }: Props) {
   const sx = link.source.x;
   const sy = link.source.y;
   const tx = link.target.x;
@@ -19,6 +21,13 @@ export function OverlayLinkLine({ link, hovered, highlighted, sourceSide, target
   if (sx == null || sy == null || tx == null || ty == null) return null;
 
   const d = curvedLinkPath(sx, sy, tx, ty, sourceSide, targetSide);
+
+  // Active state always uses the full palette color; idle state uses the
+  // lightness-adjusted traffic color so brightness encodes throughput.
+  const active = hovered || highlighted;
+  const strokeColor = active ? link.color : (trafficColor ?? link.color);
+  // Width grows slightly with traffic (1.8 → 2.4) as a secondary visual channel.
+  const strokeWidth = active ? 2.5 : 1.8 + 0.6 * trafficIntensity;
 
   return (
     <g>
@@ -33,7 +42,7 @@ export function OverlayLinkLine({ link, hovered, highlighted, sourceSide, target
         onMouseLeave={onMouseLeave}
       />
       {/* Glow behind when active */}
-      {(hovered || highlighted) && (
+      {active && (
         <path
           d={d}
           stroke={link.color}
@@ -46,9 +55,9 @@ export function OverlayLinkLine({ link, hovered, highlighted, sourceSide, target
       {/* Visible line */}
       <path
         d={d}
-        stroke={link.color}
-        strokeWidth={hovered || highlighted ? 2.5 : 1.8}
-        strokeOpacity={hovered || highlighted ? 1 : 0.6}
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
+        strokeOpacity={active ? 1 : 0.85}
         fill="none"
         pointerEvents="none"
       />
