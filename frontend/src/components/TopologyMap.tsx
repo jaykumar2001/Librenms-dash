@@ -1161,21 +1161,29 @@ export function TopologyMap({ data, sse }: Props) {
                 targetSide={deviceSide.get(link.target.hostname)}
                 trafficColor={traffic?.color}
                 trafficIntensity={traffic?.intensity}
-                onMouseEnter={(e) => showLinkTooltip(key, {
-                  type: "overlay",
-                  screenX: e.clientX,
-                  screenY: e.clientY,
-                  sourceHostname: link.source.hostname,
-                  targetHostname: link.target.hostname,
-                  sourceDisplayName: displayName(link.source.hostname),
-                  targetDisplayName: displayName(link.target.hostname),
-                  color: link.color,
-                  overlayType: link.overlayType,
-                  sourceIp: srcOverlayIp,
-                  targetIp: tgtOverlayIp,
-                  sourceInterface: link.fromIface,
-                  targetInterface: link.toIface,
-                })}
+                onMouseEnter={(e) => {
+                  const sp = srcDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType);
+                  const tp = tgtDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType);
+                  showLinkTooltip(key, {
+                    type: "overlay",
+                    screenX: e.clientX,
+                    screenY: e.clientY,
+                    sourceHostname: link.source.hostname,
+                    targetHostname: link.target.hostname,
+                    sourceDisplayName: displayName(link.source.hostname),
+                    targetDisplayName: displayName(link.target.hostname),
+                    color: link.color,
+                    overlayType: link.overlayType,
+                    sourceIp: srcOverlayIp,
+                    targetIp: tgtOverlayIp,
+                    sourceInterface: link.fromIface,
+                    targetInterface: link.toIface,
+                    sourceTxBps: sp ? sp.ifOutOctets_rate * 8 : undefined,
+                    sourceRxBps: sp ? sp.ifInOctets_rate * 8 : undefined,
+                    targetTxBps: tp ? tp.ifOutOctets_rate * 8 : undefined,
+                    targetRxBps: tp ? tp.ifInOctets_rate * 8 : undefined,
+                  });
+                }}
                 onMouseLeave={hideLinkTooltip}
               />
             );
