@@ -385,7 +385,7 @@ export function TopologyMap({ data, sse }: Props) {
       const bps = rates.get(key) ?? 0;
       const intensity = maxBps > 0 ? (Math.log1p(bps) / Math.log1p(maxBps)) ** 2 : 0;
       map.set(key, {
-        color: adjustHexLightness(link.color, 14 + 67 * intensity),
+        color: adjustHexLightness(link.color, 12 + 69 * intensity),
         intensity,
       });
     }
