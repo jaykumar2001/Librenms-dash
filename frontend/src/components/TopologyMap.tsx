@@ -372,10 +372,11 @@ export function TopologyMap({ data, sse }: Props) {
       const tgtDev = deviceMap.get(link.target.hostname);
       const srcPort = srcDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType);
       const tgtPort = tgtDev?.overlayPorts?.find((p) => p.overlayType === link.overlayType);
-      const bps = Math.max(
-        (srcPort?.ifInOctets_rate ?? 0) + (srcPort?.ifOutOctets_rate ?? 0),
-        (tgtPort?.ifInOctets_rate ?? 0) + (tgtPort?.ifOutOctets_rate ?? 0),
-      );
+      const srcBps = (srcPort?.ifInOctets_rate ?? 0) + (srcPort?.ifOutOctets_rate ?? 0);
+      const tgtBps = (tgtPort?.ifInOctets_rate ?? 0) + (tgtPort?.ifOutOctets_rate ?? 0);
+      // Use min: if one side sees no traffic the link is effectively idle,
+      // regardless of what the other side's aggregate interface rate reports.
+      const bps = srcBps > 0 && tgtBps > 0 ? Math.min(srcBps, tgtBps) : 0;
       rates.set(key, bps);
       if (bps > maxBps) maxBps = bps;
     }
