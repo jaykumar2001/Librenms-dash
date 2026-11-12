@@ -383,7 +383,7 @@ export function TopologyMap({ data, sse }: Props) {
     for (const link of visibleLinks) {
       const key = `ol-${link.overlayType}-${link.source.hostname}-${link.target.hostname}`;
       const bps = rates.get(key) ?? 0;
-      const intensity = maxBps > 0 ? Math.log1p(bps) / Math.log1p(maxBps) : 0;
+      const intensity = maxBps > 0 ? (Math.log1p(bps) / Math.log1p(maxBps)) ** 1.5 : 0;
       map.set(key, {
         color: adjustHexLightness(link.color, 38 + 38 * intensity),
         intensity,
